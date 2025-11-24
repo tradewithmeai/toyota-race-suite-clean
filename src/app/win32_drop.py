@@ -1,47 +1,64 @@
 """Windows drag-and-drop handler for DearPyGUI windows using message polling."""
 
-import ctypes
-from ctypes import wintypes
-import win32gui
-import win32con
-import win32api
+import sys
 import time
 
-# Windows API constants
-WM_DROPFILES = 0x0233
-GWL_WNDPROC = -4
+# Windows-specific imports - only available on Windows
+if sys.platform == 'win32':
+    import ctypes
+    from ctypes import wintypes
+    try:
+        import win32gui
+        import win32con
+        import win32api
+        WIN32_AVAILABLE = True
+    except ImportError:
+        WIN32_AVAILABLE = False
+        print("Warning: pywin32 not available - drag-and-drop will be disabled")
+else:
+    WIN32_AVAILABLE = False
 
-# Shell32 functions
-shell32 = ctypes.windll.shell32
-DragQueryFileW = shell32.DragQueryFileW
-DragQueryFileW.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
-DragQueryFileW.restype = wintypes.UINT
+# Windows API constants and functions - only initialize on Windows
+if WIN32_AVAILABLE:
+    WM_DROPFILES = 0x0233
+    GWL_WNDPROC = -4
 
-DragFinish = shell32.DragFinish
-DragFinish.argtypes = [wintypes.HANDLE]
+    # Shell32 functions
+    shell32 = ctypes.windll.shell32
+    DragQueryFileW = shell32.DragQueryFileW
+    DragQueryFileW.argtypes = [wintypes.HANDLE, wintypes.UINT, wintypes.LPWSTR, wintypes.UINT]
+    DragQueryFileW.restype = wintypes.UINT
 
-DragAcceptFiles = shell32.DragAcceptFiles
-DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
+    DragFinish = shell32.DragFinish
+    DragFinish.argtypes = [wintypes.HANDLE]
 
-# User32 functions for message peeking
-user32 = ctypes.windll.user32
+    DragAcceptFiles = shell32.DragAcceptFiles
+    DragAcceptFiles.argtypes = [wintypes.HWND, wintypes.BOOL]
 
-class MSG(ctypes.Structure):
-    _fields_ = [
-        ("hWnd", wintypes.HWND),
-        ("message", wintypes.UINT),
-        ("wParam", wintypes.WPARAM),
-        ("lParam", wintypes.LPARAM),
-        ("time", wintypes.DWORD),
-        ("pt", wintypes.POINT),
-    ]
+    # User32 functions for message peeking
+    user32 = ctypes.windll.user32
 
-PeekMessageW = user32.PeekMessageW
-PeekMessageW.argtypes = [ctypes.POINTER(MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT]
-PeekMessageW.restype = wintypes.BOOL
+    class MSG(ctypes.Structure):
+        _fields_ = [
+            ("hWnd", wintypes.HWND),
+            ("message", wintypes.UINT),
+            ("wParam", wintypes.WPARAM),
+            ("lParam", wintypes.LPARAM),
+            ("time", wintypes.DWORD),
+            ("pt", wintypes.POINT),
+        ]
 
-PM_REMOVE = 0x0001
-PM_NOREMOVE = 0x0000
+    PeekMessageW = user32.PeekMessageW
+    PeekMessageW.argtypes = [ctypes.POINTER(MSG), wintypes.HWND, wintypes.UINT, wintypes.UINT, wintypes.UINT]
+    PeekMessageW.restype = wintypes.BOOL
+
+    PM_REMOVE = 0x0001
+    PM_NOREMOVE = 0x0000
+else:
+    # Dummy values for non-Windows platforms
+    WM_DROPFILES = None
+    GWL_WNDPROC = None
+    MSG = None
 
 
 class Win32DropHandler:
@@ -65,6 +82,10 @@ class Win32DropHandler:
         Args:
             window_title: Title of the DearPyGUI window
         """
+        if not WIN32_AVAILABLE:
+            print("Drag-and-drop not available on this platform")
+            return False
+
         # Find the window by title
         self.hwnd = win32gui.FindWindow(None, window_title)
         if not self.hwnd:
@@ -84,7 +105,7 @@ class Win32DropHandler:
         Returns:
             True if a drop was handled, False otherwise
         """
-        if not self.enabled or not self.hwnd:
+        if not WIN32_AVAILABLE or not self.enabled or not self.hwnd:
             return False
 
         # Check for WM_DROPFILES message
@@ -127,7 +148,7 @@ class Win32DropHandler:
 
     def disable(self):
         """Disable drag-and-drop."""
-        if self.hwnd:
+        if WIN32_AVAILABLE and self.hwnd:
             DragAcceptFiles(self.hwnd, False)
         self.hwnd = None
         self.enabled = False

@@ -4,8 +4,16 @@ import os
 import sys
 import time
 
-# Add src directory to path
-src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Set working directory to the executable's location for PyInstaller compatibility
+if getattr(sys, 'frozen', False):
+    # Running as compiled executable
+    application_path = os.path.dirname(sys.executable)
+    os.chdir(application_path)
+    src_dir = application_path
+else:
+    # Running as script
+    src_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 sys.path.insert(0, src_dir)
 
 import dearpygui.dearpygui as dpg
@@ -22,6 +30,7 @@ from app.telemetry_panel import TelemetryPanel
 from app.intro_animation import IntroAnimation
 from app.transitions import TransitionManager, AnimatedProgress
 from app.message_overlay import init_message_overlay, render_overlay
+from app.training_demo import DemoStateManager, should_show_demo
 
 # Trail generation for delta speed visualization
 try:
@@ -66,6 +75,9 @@ class RaceReplayApp:
         # Transition manager
         self.transitions = TransitionManager()
         self.progress_animator = None
+
+        # Training demo
+        self.demo_manager = None
 
     def setup(self):
         """Initialize DearPyGUI and create initial UI."""
@@ -351,15 +363,44 @@ class RaceReplayApp:
                 callback=self.renderer.on_mouse_release,
             )
 
+            # ESC key handler for demo skip
+            dpg.add_key_press_handler(
+                key=dpg.mvKey_Escape,
+                callback=self._on_escape_key
+            )
+
         # Switch primary window
         dpg.set_primary_window("main_window", True)
 
-        print("\nApplication started. Press Play to begin simulation.")
-        print("Controls:")
-        print("  - Play/Pause: Control playback")
-        print("  - Speed slider: Adjust playback speed (0.1x to 4x)")
-        print("  - Time scrubber: Jump to specific time")
-        print("  - Driving Style: Apply different driving modes")
+        # Check if demo should run (first launch or hackathon mode)
+        hackathon_mode = os.environ.get('HACKATHON_DEMO') == '1'
+
+        if hackathon_mode or should_show_demo():
+            if hackathon_mode:
+                print("\n🏁 HACKATHON DEMO MODE - 2.5 minute automated showcase")
+                print("📹 Recording? Demo starts in 2 seconds...")
+                import time
+                time.sleep(2)
+            else:
+                print("\nStarting training demo (first launch)...")
+
+            self.demo_manager = DemoStateManager(
+                self.world, self.renderer, self.controls, self.telemetry,
+                use_hackathon_script=hackathon_mode
+            )
+            self.demo_manager.start_demo()
+        else:
+            print("\nApplication started. Press Play to begin simulation.")
+            print("Controls:")
+            print("  - Play/Pause: Control playback")
+            print("  - Speed slider: Adjust playback speed (0.1x to 4x)")
+            print("  - Time scrubber: Jump to specific time")
+            print("  - Driving Style: Apply different driving modes")
+
+    def _on_escape_key(self):
+        """Handle ESC key press - skip demo if active."""
+        if self.demo_manager and self.demo_manager.is_running:
+            self.demo_manager.request_skip()
 
     def run(self):
         """Main render loop."""
@@ -405,6 +446,13 @@ class RaceReplayApp:
 
                 # Render message overlay on top of everything
                 render_overlay()
+
+                # Update demo if active
+                if self.demo_manager and self.demo_manager.is_running:
+                    dt = current_time - self.last_fps_time if self.last_fps_time else 0.016
+                    self.demo_manager.update(dt)
+                    # Render demo cursor on top
+                    self.demo_manager.render("canvas")
 
                 # Update FPS counter
                 self.frame_count += 1
