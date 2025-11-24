@@ -268,6 +268,21 @@ class RaceReplayApp:
         self.world.load_theme_preference()  # Load saved theme
         self.world.load_trajectories()
 
+        # --- New: basic world sanity check before enabling zoom/pan ---
+        bounds = getattr(self.world, "bounds", None)
+        required_keys = ("x_min", "x_max", "y_min", "y_max")
+
+        if (
+            isinstance(bounds, dict)
+            and all(k in bounds for k in required_keys)
+            and bounds["x_max"] != bounds["x_min"]
+            and bounds["y_max"] != bounds["y_min"]
+        ):
+            enable_mouse_handlers = True
+        else:
+            enable_mouse_handlers = False
+            print("[WARN] World bounds not valid; zoom/pan handlers disabled to avoid crashes.")
+
         # Calculate canvas size to fill available space
         # Use large dimensions - DearPyGUI will clip to container
         canvas_width = 2000
@@ -310,11 +325,27 @@ class RaceReplayApp:
 
         # Register mouse event handlers for zoom/pan/HUD clicks
         with dpg.handler_registry():
-            dpg.add_mouse_wheel_handler(callback=self.renderer.on_mouse_wheel)
-            dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Right, callback=self.renderer.on_mouse_drag)
-            dpg.add_mouse_drag_handler(button=dpg.mvMouseButton_Left, callback=self.renderer.on_hud_drag)
-            dpg.add_mouse_click_handler(button=dpg.mvMouseButton_Left, callback=self.renderer.on_mouse_click)
-            dpg.add_mouse_release_handler(button=dpg.mvMouseButton_Left, callback=self.renderer.on_mouse_release)
+            # Only enable zoom/pan if bounds are sane
+            if enable_mouse_handlers:
+                dpg.add_mouse_wheel_handler(callback=self.renderer.on_mouse_wheel)
+                dpg.add_mouse_drag_handler(
+                    button=dpg.mvMouseButton_Right,
+                    callback=self.renderer.on_mouse_drag,
+                )
+
+            # HUD interactions are safe even with bad bounds
+            dpg.add_mouse_drag_handler(
+                button=dpg.mvMouseButton_Left,
+                callback=self.renderer.on_hud_drag,
+            )
+            dpg.add_mouse_click_handler(
+                button=dpg.mvMouseButton_Left,
+                callback=self.renderer.on_mouse_click,
+            )
+            dpg.add_mouse_release_handler(
+                button=dpg.mvMouseButton_Left,
+                callback=self.renderer.on_mouse_release,
+            )
 
         # Switch primary window
         dpg.set_primary_window("main_window", True)

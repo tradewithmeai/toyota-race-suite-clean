@@ -60,55 +60,73 @@ class GPURenderer:
         self.box_select_active = False
 
     def world_to_screen(self, x: float, y: float) -> tuple:
-        """Transform meters -> pixels with padding, aspect ratio, zoom and pan."""
-        bounds = self.world.bounds
+        """
+        Transform world coords (meters) into screen coords (pixels).
 
-        # Add 15% padding
+        This version is defensive:
+        - If self.world.bounds is missing or incomplete, we fail soft and
+          just return the centre of the viewport instead of crashing.
+        """
+
+        # --- Defensive: handle missing / broken bounds without crashing ---
+        bounds = getattr(self.world, "bounds", None)
+        required_keys = ("x_min", "x_max", "y_min", "y_max")
+
+        if (
+            not isinstance(bounds, dict)
+            or not all(k in bounds for k in required_keys)
+            or bounds["x_max"] == bounds["x_min"]
+            or bounds["y_max"] == bounds["y_min"]
+        ):
+            # Fail soft: draw at centre of the viewport instead of raising KeyError/ZeroDivisionError
+            cx = self.viewport_width / 2.0
+            cy = self.viewport_height / 2.0
+            return cx, cy
+
+        # --- Original logic (safe) ---
+        x_min = float(bounds["x_min"])
+        x_max = float(bounds["x_max"])
+        y_min = float(bounds["y_min"])
+        y_max = float(bounds["y_max"])
+
+        x_range = x_max - x_min
+        y_range = y_max - y_min
+
+        # Extra safety – avoid degenerate ranges
+        if x_range <= 0:
+            x_range = 1.0
+        if y_range <= 0:
+            y_range = 1.0
+
+        # Add a bit of padding around the track
         padding_factor = 0.15
-        x_range = bounds['x_max'] - bounds['x_min']
-        y_range = bounds['y_max'] - bounds['y_min']
+        x_min_padded = x_min - padding_factor * x_range
+        x_max_padded = x_max + padding_factor * x_range
+        y_min_padded = y_min - padding_factor * y_range
+        y_max_padded = y_max + padding_factor * y_range
 
-        x_min = bounds['x_min'] - padding_factor * x_range
-        x_max = bounds['x_max'] + padding_factor * x_range
-        y_min = bounds['y_min'] - padding_factor * y_range
-        y_max = bounds['y_max'] + padding_factor * y_range
+        x_range_padded = x_max_padded - x_min_padded
+        y_range_padded = y_max_padded - y_min_padded
 
-        # Apply pan offset in world coordinates
-        x_adjusted = x - self.pan_offset_x
-        y_adjusted = y - self.pan_offset_y
+        if x_range_padded <= 0:
+            x_range_padded = 1.0
+        if y_range_padded <= 0:
+            y_range_padded = 1.0
 
-        # Normalize to [0, 1]
-        sx = (x_adjusted - x_min) / (x_max - x_min) if x_max != x_min else 0.5
-        sy = (y_adjusted - y_min) / (y_max - y_min) if y_max != y_min else 0.5
+        # Normalise into [0, 1] in world space
+        nx = (x - x_min_padded) / x_range_padded
+        ny = (y - y_min_padded) / y_range_padded
 
-        # Flip Y axis
-        sy = 1.0 - sy
+        # Apply zoom + pan in normalised space
+        # zoom_level > 1 = zoom in, < 1 = zoom out
+        nx = (nx - 0.5) * self.zoom_level + 0.5 + self.pan_offset_x
+        ny = (ny - 0.5) * self.zoom_level + 0.5 + self.pan_offset_y
 
-        # Apply zoom (scale from center)
-        cx, cy = 0.5, 0.5
-        sx = cx + (sx - cx) * self.zoom_level
-        sy = cy + (sy - cy) * self.zoom_level
+        # Convert to pixel space (invert Y for screen coordinates)
+        screen_x = nx * self.viewport_width
+        screen_y = (1.0 - ny) * self.viewport_height
 
-        # Preserve aspect ratio
-        data_aspect = (x_max - x_min) / (y_max - y_min) if y_max != y_min else 1.0
-        canvas_aspect = self.viewport_width / self.viewport_height
-
-        if data_aspect > canvas_aspect:
-            # Fit to width
-            scale = self.viewport_width
-            height = scale / data_aspect
-            offset_y = (self.viewport_height - height) / 2
-            px = sx * scale
-            py = sy * height + offset_y
-        else:
-            # Fit to height
-            scale = self.viewport_height
-            width = scale * data_aspect
-            offset_x = (self.viewport_width - width) / 2
-            px = sx * width + offset_x
-            py = sy * scale
-
-        return px, py
+        return screen_x, screen_y
 
     def draw_static_track(self):
         """Draw track using density map with optional racing line overlay."""
@@ -1545,42 +1563,36 @@ class GPURenderer:
         self.invalidate_track()
 
     def on_mouse_wheel(self, sender, app_data):
-        """Handle zoom via mouse wheel (only when over canvas)."""
-        # Safety check - ensure world is loaded
-        if self.world is None or not hasattr(self.world, 'bounds'):
-            return
+        """
+        Mouse wheel handler for zoom.
 
-        # Get mouse position in global screen coordinates
-        mouse_pos = dpg.get_mouse_pos(local=False)
+        app_data is the wheel delta from Dear PyGui.
+        We clamp zoom_level to a safe range and swallow any unexpected errors
+        so the whole app doesn't crash mid-demo.
+        """
+        try:
+            delta = float(app_data)
 
-        # Get canvas_window position and size
-        if not dpg.does_item_exist("canvas_window"):
-            return
+            # Tune this factor if zoom feels too slow/fast
+            zoom_factor = 1.0 + 0.1 * delta
 
-        canvas_pos = dpg.get_item_pos("canvas_window")
-        canvas_size = dpg.get_item_rect_size("canvas_window")
+            # Avoid weird negative or zero factors
+            if zoom_factor <= 0.0:
+                return
 
-        # Check if mouse is within canvas_window bounds
-        if (mouse_pos[0] < canvas_pos[0] or
-            mouse_pos[0] > canvas_pos[0] + canvas_size[0] or
-            mouse_pos[1] < canvas_pos[1] or
-            mouse_pos[1] > canvas_pos[1] + canvas_size[1]):
-            return
+            self.zoom_level *= zoom_factor
 
-        # app_data is the wheel delta
-        zoom_speed = 0.1
-        if app_data > 0:
-            # Zoom in
-            self.zoom_level *= (1.0 + zoom_speed)
-        else:
-            # Zoom out
-            self.zoom_level *= (1.0 - zoom_speed)
+            # Clamp zoom so we don't blow up the projection
+            self.zoom_level = max(0.2, min(self.zoom_level, 5.0))
 
-        # Clamp zoom level
-        self.zoom_level = max(0.5, min(10.0, self.zoom_level))
+            # Redraw track with new zoom
+            self.invalidate_track()
 
-        # Redraw track with new zoom
-        self.invalidate_track()
+        except Exception as e:
+            # Fail soft: log but don't kill the app
+            print(f"[ERROR] on_mouse_wheel failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     def on_mouse_click(self, sender, app_data):
         """Handle mouse clicks for pause, car selection, and HUD interaction."""
