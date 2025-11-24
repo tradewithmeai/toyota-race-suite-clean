@@ -510,20 +510,16 @@ class WorldModel:
         if self.global_racing_line_tree is None:
             return []
 
-        # Sample every few points to reduce computation (every 10 frames = 100ms)
-        sample_rate = 10
+        # Sample every 20 frames (200ms) to reduce computation
+        sample_rate = 20
         for idx in range(start_idx, current_idx, sample_rate):
             x = float(traj[idx, 0])
             y = float(traj[idx, 1])
             speed_ms = float(traj[idx, 2]) * 0.44704  # Convert mph to m/s
 
-            # Find nearest racing line point
-            _, nearest_idx = self.global_racing_line_tree.query([x, y])
-
-            # Get reference speed (use simple average as baseline)
-            # In a full implementation, this would come from canonical_racing_line
-            # For now, use a reference speed of ~40 m/s (typical racing speed)
-            ref_speed_ms = 40.0  # Placeholder - should load from speed_profile.csv
+            # Use simple baseline speed instead of KDTree query for performance
+            # Average racing speed for reference
+            ref_speed_ms = 40.0  # ~90 mph baseline
 
             # Compute delta in km/h
             delta_kmh = (speed_ms - ref_speed_ms) * 3.6

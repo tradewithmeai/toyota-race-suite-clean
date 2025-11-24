@@ -965,9 +965,13 @@ class GPURenderer:
             # Handle Delta Speed mode (dynamic trail following car)
             # This shows the last N seconds of the car's path with delta speed coloring
             if trail_mode == 'Delta Speed':
-                # Only draw for selected cars
+                # ONLY draw for selected cars (not all cars)
                 is_selected = car_id in selected
-                if highlight and is_any_selected and not is_selected:
+                if not is_selected:
+                    continue
+
+                # Skip if no cars selected at all
+                if not is_any_selected:
                     continue
 
                 # Get custom trail duration from settings
@@ -1256,10 +1260,8 @@ class GPURenderer:
 
         # Delete all old HUD elements (support multiple cars and multiple toggles)
         for i in range(20):  # Support up to 20 cars max
-            # Delete main HUD items
-            for tag_prefix in ["hud_bg", "hud_header", "hud_car_name", "hud_collapse_btn",
-                              "hud_speed", "hud_gear", "hud_brake", "hud_lap", "hud_time",
-                              "hud_position", "hud_deviation", "hud_steering"]:
+            # Delete main HUD structure items
+            for tag_prefix in ["hud_bg", "hud_header", "hud_car_name", "hud_collapse_btn"]:
                 tag = f"{tag_prefix}_{i}"
                 if dpg.does_item_exist(tag):
                     dpg.delete_item(tag)
@@ -1270,11 +1272,20 @@ class GPURenderer:
                 if dpg.does_item_exist(tag):
                     dpg.delete_item(tag)
 
+            # Delete HUD data items - these have item_idx suffix too
+            for tag_prefix in ["hud_speed", "hud_gear", "hud_brake", "hud_lap", "hud_time",
+                              "hud_position", "hud_deviation", "hud_steering"]:
+                for item_idx in range(10):  # Max 10 items per HUD
+                    tag = f"{tag_prefix}_{i}_{item_idx}"
+                    if dpg.does_item_exist(tag):
+                        dpg.delete_item(tag)
+
             # Delete all toggle items
             for toggle_name in ["speed", "gear", "brake", "lap", "time", "position", "deviation", "steering"]:
-                tag = f"hud_toggle_{toggle_name}_{i}"
-                if dpg.does_item_exist(tag):
-                    dpg.delete_item(tag)
+                for item_idx in range(10):
+                    tag = f"hud_toggle_{toggle_name}_{i}_{item_idx}"
+                    if dpg.does_item_exist(tag):
+                        dpg.delete_item(tag)
 
         # Clear interaction regions for fresh click detection
         self.hud_toggle_regions = {}
@@ -1873,10 +1884,15 @@ class GPURenderer:
         cumulative_dx = app_data[1]
         cumulative_dy = app_data[2]
 
-        # Detect new drag (cumulative resets to near zero)
-        if abs(cumulative_dx) < 1 and abs(cumulative_dy) < 1:
-            self.last_drag_delta_x = 0.0
-            self.last_drag_delta_y = 0.0
+        # Detect new drag - when cumulative is smaller than what we tracked,
+        # it means a new drag has started
+        if (abs(cumulative_dx) < abs(self.last_drag_delta_x) - 5 or
+            abs(cumulative_dy) < abs(self.last_drag_delta_y) - 5 or
+            (abs(cumulative_dx) < 3 and abs(cumulative_dy) < 3)):
+            # New drag started - reset tracking and skip this frame to avoid jump
+            self.last_drag_delta_x = cumulative_dx
+            self.last_drag_delta_y = cumulative_dy
+            return
 
         # Compute per-frame delta from cumulative
         dx = cumulative_dx - self.last_drag_delta_x
@@ -1886,8 +1902,8 @@ class GPURenderer:
         self.last_drag_delta_x = cumulative_dx
         self.last_drag_delta_y = cumulative_dy
 
-        # Skip if no movement
-        if abs(dx) < 0.1 and abs(dy) < 0.1:
+        # Skip if no significant movement
+        if abs(dx) < 0.5 and abs(dy) < 0.5:
             return
 
         # Convert screen delta to normalized space delta
