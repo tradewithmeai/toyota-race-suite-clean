@@ -46,6 +46,9 @@ outputs/
 !data/sample/*.npy
 !data/sample/*.json
 
+# Large data files (download separately)
+R2_barber_telemetry_data.csv
+
 # Logs
 *.log
 

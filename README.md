@@ -44,6 +44,13 @@ pip install -r requirements.txt
 python -m src.app.main
 ```
 
+### Sample Data
+
+Download the sample telemetry file (1.5GB):
+- **R2_barber_telemetry_data.csv** - [Contact for download link]
+
+Place the CSV file in the `data/raw/` folder.
+
 ### Usage
 
 1. Launch the application
