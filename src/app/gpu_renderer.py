@@ -48,7 +48,7 @@ class GPURenderer:
 
         # HUD panel interaction state
         self.hud_collapse_regions = {}  # car_id -> (x, y, width, height) for collapse button
-        self.hud_drag_regions = {}  # car_id -> (x, y, width, height) for drag handle
+        self.hud_reset_regions = {}  # car_id -> (x, y, width, height) for reset button
 
         # Reference to playback controls (set by main.py)
         self.controls = None
@@ -1266,9 +1266,9 @@ class GPURenderer:
                 if dpg.does_item_exist(tag):
                     dpg.delete_item(tag)
 
-            # Delete drag handle lines
-            for j in range(3):
-                tag = f"hud_drag_line_{i}_{j}"
+            # Delete reset button elements
+            for suffix in ["circle", "arrow"]:
+                tag = f"hud_reset_{suffix}_{i}"
                 if dpg.does_item_exist(tag):
                     dpg.delete_item(tag)
 
@@ -1290,7 +1290,7 @@ class GPURenderer:
         # Clear interaction regions for fresh click detection
         self.hud_toggle_regions = {}
         self.hud_collapse_regions = {}
-        self.hud_drag_regions = {}
+        self.hud_reset_regions = {}
 
         # Get cars to display in order
         display_cars = []
@@ -1481,21 +1481,35 @@ class GPURenderer:
                 tag=f"hud_header_{idx}"
             )
 
-            # Draw drag handle (3 horizontal lines on left)
-            drag_handle_x = hud_x - 5
-            for i in range(3):
-                line_y = hud_y + 8 + (i * 4)
-                dpg.draw_line(
-                    (drag_handle_x, line_y),
-                    (drag_handle_x + 10, line_y),
-                    color=(150, 150, 150),
-                    thickness=1,
-                    parent=self.canvas,
-                    tag=f"hud_drag_line_{idx}_{i}"
-                )
+            # Draw reset button (circular arrow icon on left)
+            reset_btn_x = hud_x - 2
+            reset_btn_y = hud_y + 12
+            reset_size = 8
 
-            # Store drag region - make entire header draggable (except collapse button area on right)
-            self.hud_drag_regions[car_id] = (hud_x - 10, hud_y, 170, header_height)
+            # Draw circular arrow (reset symbol)
+            # Circle outline
+            dpg.draw_circle(
+                (reset_btn_x, reset_btn_y),
+                reset_size,
+                color=(150, 200, 255),
+                thickness=1.5,
+                parent=self.canvas,
+                tag=f"hud_reset_circle_{idx}"
+            )
+            # Arrow pointing
+            dpg.draw_triangle(
+                (reset_btn_x + reset_size - 2, reset_btn_y - 2),
+                (reset_btn_x + reset_size + 2, reset_btn_y - 2),
+                (reset_btn_x + reset_size, reset_btn_y + 2),
+                color=(150, 200, 255),
+                fill=(150, 200, 255),
+                parent=self.canvas,
+                tag=f"hud_reset_arrow_{idx}"
+            )
+
+            # Store reset button region
+            self.hud_reset_regions[car_id] = (reset_btn_x - reset_size, reset_btn_y - reset_size,
+                                              reset_size * 2, reset_size * 2)
 
             # Draw car name in header
             dpg.draw_text(
@@ -1702,15 +1716,23 @@ class GPURenderer:
                 print(f"Toggled collapse for {car_id}: {self.world.hud_collapsed[car_id]}")
                 return
 
-        # Check drag handle regions (header bar - for starting drag)
-        # This has second priority, larger area than collapse button
-        for car_id, (x, y, w, h) in self.hud_drag_regions.items():
+        # Check reset button regions - reset all HUD items to visible
+        for car_id, (x, y, w, h) in self.hud_reset_regions.items():
             if (canvas_mouse_x >= x and canvas_mouse_x <= x + w and
                 canvas_mouse_y >= y and canvas_mouse_y <= y + h):
-                # Start dragging
-                self.dragging_hud = car_id
-                self.drag_start_y = canvas_mouse_y
-                print(f"Started dragging {car_id}")
+                # Reset button clicked - restore all HUD items for this car
+                if car_id in self.world.hud_items_visible:
+                    self.world.hud_items_visible[car_id] = {
+                        'speed': True,
+                        'gear': True,
+                        'brake': True,
+                        'lap': True,
+                        'time': True,
+                        'position': True,
+                        'deviation': True,
+                        'steering': True
+                    }
+                    print(f"Reset all HUD items for {car_id}")
                 return
 
         # Check toggle regions

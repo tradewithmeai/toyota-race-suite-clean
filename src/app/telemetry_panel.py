@@ -42,7 +42,7 @@ class TelemetryPanel:
 
         # Trail mode dropdown (only visible when trails enabled)
         dpg.add_combo(label="", tag="trail_mode",
-                     items=["fade_3s", "fade_5s", "fade_10s", "Delta Speed", "Custom"],
+                     items=["fade_3s", "fade_5s", "fade_10s", "Delta Speed"],
                      default_value="fade_3s",
                      callback=self.set_trail_mode, width=120, show=False)
 
@@ -72,27 +72,6 @@ class TelemetryPanel:
         # Sector Lines removed - code commented out
         # dpg.add_checkbox(label="Sector Lines", tag="sector_lines_cb",
         #                 default_value=False, callback=self.toggle_sector_lines)
-
-        dpg.add_spacer(height=15)
-
-        # === HUD SETTINGS (collapsible) ===
-        with dpg.collapsing_header(label="HUD SETTINGS", default_open=False):
-            dpg.add_checkbox(label="Speed", tag="hud_speed_cb",
-                            default_value=True, callback=self.toggle_hud_speed)
-            dpg.add_checkbox(label="Gear", tag="hud_gear_cb",
-                            default_value=True, callback=self.toggle_hud_gear)
-            dpg.add_checkbox(label="Brake", tag="hud_brake_cb",
-                            default_value=True, callback=self.toggle_hud_brake)
-            dpg.add_checkbox(label="Lap", tag="hud_lap_cb",
-                            default_value=True, callback=self.toggle_hud_lap)
-            dpg.add_checkbox(label="Time", tag="hud_time_cb",
-                            default_value=True, callback=self.toggle_hud_time)
-            dpg.add_checkbox(label="Position", tag="hud_position_cb",
-                            default_value=True, callback=self.toggle_hud_position)
-            dpg.add_checkbox(label="Deviation", tag="hud_deviation_cb",
-                            default_value=False, callback=self.toggle_hud_deviation)
-            dpg.add_checkbox(label="Steering", tag="hud_steering_cb",
-                            default_value=False, callback=self.toggle_hud_steering)
 
         dpg.add_spacer(height=15)
 
