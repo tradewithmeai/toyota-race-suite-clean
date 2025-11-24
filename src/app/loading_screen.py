@@ -14,9 +14,6 @@ class LoadingScreen:
     def __init__(self, state_manager: StateManager):
         self.state = state_manager
         self.window_tag = "loading_window"
-        self.config_file = os.path.join(os.path.expanduser("~"), ".race_replay_config.json")
-        self.last_used_path = self._load_last_used_path()
-        self.recent_files = self._load_recent_files()
         self.is_dragging_over = False
         self.log_messages = []  # Store log messages for terminal display
 
@@ -73,51 +70,24 @@ class LoadingScreen:
             dpg.delete_item("error_group")
 
         with dpg.group(tag="waiting_group", parent="state_content"):
-            # Drop zone card
-            with dpg.group(horizontal=True):
-                dpg.add_spacer(width=50)
-                with dpg.child_window(width=420, height=120, tag="drop_zone",
-                                     border=True):
-                    dpg.add_spacer(height=15)
-                    with dpg.group(horizontal=True):
-                        dpg.add_spacer(width=80)
-                        with dpg.group(horizontal=False):
-                            dpg.add_text("Drop CSV or Folder Here",
-                                        tag="drop_text",
-                                        color=(200, 200, 200))
-
-            dpg.add_spacer(height=25)
-
-            # Quick load section
+            # Load options section
             with dpg.group(horizontal=True):
                 dpg.add_spacer(width=50)
                 with dpg.group(horizontal=False):
-                    dpg.add_text("QUICK LOAD", color=(255, 200, 0))
+                    dpg.add_text("SELECT DATA TO LOAD", color=(255, 200, 0))
                     dpg.add_separator()
-                    dpg.add_spacer(height=10)
+                    dpg.add_spacer(height=20)
 
                     # Track if any options are available
                     has_options = False
-
-                    # Load last used button (if available)
-                    if self.last_used_path and os.path.exists(self.last_used_path):
-                        path_display = os.path.basename(self.last_used_path)
-                        if len(path_display) > 35:
-                            path_display = path_display[:32] + "..."
-
-                        dpg.add_button(label=f"Last Used: {path_display}",
-                                      callback=self._load_last_used,
-                                      width=420)
-                        dpg.add_spacer(height=8)
-                        has_options = True
 
                     # Demo data button (pre-processed)
                     demo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'processed')
                     if os.path.exists(os.path.join(demo_path, 'metadata.json')):
                         dpg.add_button(label="Load Processed Data",
                                       callback=self._load_demo_data,
-                                      width=420)
-                        dpg.add_spacer(height=8)
+                                      width=420, height=50)
+                        dpg.add_spacer(height=15)
                         has_options = True
 
                     # Sample CSV button (needs processing)
@@ -125,29 +95,8 @@ class LoadingScreen:
                     if os.path.exists(sample_csv):
                         dpg.add_button(label="Process Sample CSV",
                                       callback=self._load_sample_csv,
-                                      width=420)
-                        dpg.add_spacer(height=8)
-                        has_options = True
-
-                    # Recent files - filter out None and non-existent paths
-                    valid_recent_files = [p for p in self.recent_files[:5]
-                                         if p is not None and os.path.exists(p) and p != self.last_used_path]
-                    if valid_recent_files:
-                        dpg.add_spacer(height=10)
-                        dpg.add_text("Recent Files:", color=(150, 150, 150))
-                        dpg.add_spacer(height=5)
-
-                        for recent_path in valid_recent_files:
-                            display_name = os.path.basename(recent_path)
-                            if len(display_name) > 40:
-                                display_name = display_name[:37] + "..."
-
-                            dpg.add_button(
-                                label=display_name,
-                                callback=lambda s, a, p=recent_path: self._load_recent(p),
-                                width=420
-                            )
-                            dpg.add_spacer(height=3)
+                                      width=420, height=50)
+                        dpg.add_spacer(height=15)
                         has_options = True
 
                     # Show message if no options available
@@ -318,60 +267,6 @@ class LoadingScreen:
         self.animator.update(dt)
         self.animator.draw()
 
-    def _load_last_used_path(self):
-        """Load the last used file path from config."""
-        try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-                    return config.get('last_used_path')
-        except Exception as e:
-            print(f"Error loading config: {e}")
-        return None
-
-    def _load_recent_files(self):
-        """Load recent files list from config."""
-        try:
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-                    recent = config.get('recent_files', [])
-                    # Filter out None and empty values to prevent invalid path errors
-                    return [p for p in recent if p is not None and p != '']
-        except Exception as e:
-            print(f"Error loading recent files: {e}")
-        return []
-
-    def _save_last_used_path(self, path: str):
-        """Save the last used file path to config and update recent files."""
-        try:
-            # Load existing config
-            config = {}
-            if os.path.exists(self.config_file):
-                with open(self.config_file, 'r') as f:
-                    config = json.load(f)
-
-            # Update last used
-            config['last_used_path'] = path
-
-            # Update recent files (keep last 10, no duplicates)
-            recent = config.get('recent_files', [])
-            if path in recent:
-                recent.remove(path)
-            recent.insert(0, path)
-            config['recent_files'] = recent[:10]
-
-            # Save
-            with open(self.config_file, 'w') as f:
-                json.dump(config, f)
-
-            # Update local state
-            self.last_used_path = path
-            self.recent_files = config['recent_files']
-
-        except Exception as e:
-            print(f"Error saving config: {e}")
-
     def _load_demo_data(self):
         """Load the bundled demo data."""
         demo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'processed')
@@ -379,7 +274,6 @@ class LoadingScreen:
         metadata_path = os.path.join(demo_path, 'metadata.json')
 
         if os.path.exists(metadata_path):
-            self._save_last_used_path(demo_path)
             self.state.set_processed_dir(demo_path)
         else:
             self.state.set_error(f"Demo data not found:\n{demo_path}")
@@ -390,52 +284,15 @@ class LoadingScreen:
         sample_csv = os.path.abspath(sample_csv)
 
         if os.path.exists(sample_csv):
-            self._save_last_used_path(sample_csv)
             self.state.set_input_file(sample_csv)
         else:
             self.state.set_error(f"Sample CSV not found:\n{sample_csv}")
-
-    def _load_recent(self, path: str):
-        """Load a file from the recent files list."""
-        if path is None:
-            self.state.set_error("Invalid path: None")
-            return
-        if os.path.exists(path):
-            if os.path.isdir(path):
-                metadata_path = os.path.join(path, 'metadata.json')
-                if os.path.exists(metadata_path):
-                    self._save_last_used_path(path)
-                    self.state.set_processed_dir(path)
-                else:
-                    self.state.set_error(f"Invalid folder:\n{path}\n\nMissing metadata.json")
-            else:
-                self._save_last_used_path(path)
-                self.state.set_input_file(path)
-        else:
-            self.state.set_error(f"File not found:\n{path}")
-
-    def _load_last_used(self):
-        """Load the last used file."""
-        if self.last_used_path and os.path.exists(self.last_used_path):
-            # Check if it's a directory (processed data) or file (CSV)
-            if os.path.isdir(self.last_used_path):
-                metadata_path = os.path.join(self.last_used_path, 'metadata.json')
-                if os.path.exists(metadata_path):
-                    self.state.set_processed_dir(self.last_used_path)
-                else:
-                    self.state.set_error(f"Last used path is invalid:\n{self.last_used_path}\n\nMissing metadata.json")
-            else:
-                # Assume it's a CSV file
-                self.state.set_input_file(self.last_used_path)
-        else:
-            self.state.set_error("Last used file not found")
 
     def _open_file_dialog(self):
         """Open file dialog for selecting CSV."""
         def file_selected(sender, app_data):
             if app_data and 'file_path_name' in app_data:
                 file_path = app_data['file_path_name']
-                self._save_last_used_path(file_path)
                 self.state.set_input_file(file_path)
 
         # Create file dialog
@@ -453,7 +310,6 @@ class LoadingScreen:
                 # Verify it's a valid processed data directory
                 metadata_path = os.path.join(dir_path, 'metadata.json')
                 if os.path.exists(metadata_path):
-                    self._save_last_used_path(dir_path)
                     self.state.set_processed_dir(dir_path)
                 else:
                     self.state.set_error(f"Invalid processed data folder:\n{dir_path}\n\nMissing metadata.json")
@@ -489,12 +345,10 @@ class LoadingScreen:
             # Check if it's a processed data directory
             metadata_path = os.path.join(file_path, 'metadata.json')
             if os.path.exists(metadata_path):
-                self._save_last_used_path(file_path)
                 self.state.set_processed_dir(file_path)
             else:
                 self.state.set_error(f"Invalid folder:\n{file_path}\n\nMissing metadata.json")
         elif file_path.lower().endswith('.csv'):
-            self._save_last_used_path(file_path)
             self.state.set_input_file(file_path)
         else:
             self.state.set_error(f"Invalid file type: {file_path}\n\nPlease drop a .csv file or processed data folder.")
