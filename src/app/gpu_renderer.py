@@ -1546,6 +1546,10 @@ class GPURenderer:
 
     def on_mouse_wheel(self, sender, app_data):
         """Handle zoom via mouse wheel (only when over canvas)."""
+        # Safety check - ensure world is loaded
+        if self.world is None or not hasattr(self.world, 'bounds'):
+            return
+
         # Get mouse position in global screen coordinates
         mouse_pos = dpg.get_mouse_pos(local=False)
 
@@ -1786,6 +1790,10 @@ class GPURenderer:
 
         app_data contains: [button, delta_x, delta_y]
         """
+        # Safety check - ensure world is loaded
+        if self.world is None or not hasattr(self.world, 'bounds'):
+            return
+
         # Only handle right button panning
         # Check if mouse is over canvas
         mouse_pos = dpg.get_mouse_pos(local=False)
