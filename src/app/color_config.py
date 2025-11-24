@@ -366,6 +366,12 @@ class ColorConfig:
             self._colors['race_timer'][component] = tuple(color)
             self.save()
 
+    def set_delta_speed_color(self, level: str, color: RGB):
+        """Set delta speed trail color (slower/baseline/faster)."""
+        if level in self._colors['delta_speed']:
+            self._colors['delta_speed'][level] = tuple(color)
+            self.save()
+
     def set_track_color(self, element: str, color):
         """Set track color (racing_line/outline) - accepts RGB or RGBA."""
         if element in self._colors['track']:

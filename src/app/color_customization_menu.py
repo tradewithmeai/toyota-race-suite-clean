@@ -33,6 +33,7 @@ class ColorCustomizationMenu:
             'brake_gradient': 'Brake Visualisation',
             'acceleration_heatmap': 'Accel Fill',
             'deviation_bars': 'Deviation Bars',
+            'trail': 'Trail',
             'race_timer': 'Race Timer',
             'track': 'Track Elements',
         }
@@ -274,6 +275,9 @@ class ColorCustomizationMenu:
             'acceleration_heatmap': [
                 ('accel_display_size', 'Accel Fill Size', 5, 40),
                 ('trail_duration_s', 'Custom Trail Duration (s)', 1, 15),
+            ],
+            'trail': [
+                ('trail_duration_s', 'Trail Duration (s)', 1, 15),
             ],
         }
 

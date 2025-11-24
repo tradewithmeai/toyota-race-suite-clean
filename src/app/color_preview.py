@@ -111,6 +111,8 @@ class ColorPreviewDisplay:
             self._render_race_timer()
         elif self.current_category == "track":
             self._render_track()
+        elif self.current_category == "trail":
+            self._render_trail()
         else:
             self._render_generic()
 
@@ -510,6 +512,70 @@ class ColorPreviewDisplay:
             self.clickable_regions[f'track_{key}'] = {
                 'bounds': (box_x, y, box_x + box_size, y + box_size),
                 'category': 'track',
+                'key': key,
+                'color': color
+            }
+
+    def _render_trail(self):
+        """Render trail color preview - wavy line with 3 segments."""
+        colors = color_config.get_delta_speed_colors()
+
+        # Define 3 segments: slower (blue), baseline (green), faster (red)
+        segments = [
+            ('slower', 'Slower', colors['slower']),
+            ('baseline', 'Baseline', colors['baseline']),
+            ('faster', 'Faster', colors['faster'])
+        ]
+
+        # Canvas dimensions
+        canvas_width = 400
+        canvas_height = 400
+
+        # Draw wavy line split into 3 segments
+        start_y = 100
+        segment_width = canvas_width / 3
+        wave_amplitude = 30
+
+        for idx, (key, label, color) in enumerate(segments):
+            # Calculate segment bounds
+            start_x = idx * segment_width
+            end_x = (idx + 1) * segment_width
+
+            # Generate wavy line points for this segment
+            points = []
+            num_points = 20
+            for i in range(num_points + 1):
+                t = i / num_points
+                x = start_x + t * segment_width
+                # Sine wave
+                y = start_y + wave_amplitude * math.sin(t * math.pi * 2)
+                points.append([x, y])
+
+            # Draw polyline for this segment
+            dpg.draw_polyline(
+                points, color=color, thickness=6,
+                parent=self.drawlist_tag
+            )
+
+            # Draw label below the segment
+            label_x = start_x + segment_width / 2 - 20
+            label_y = start_y + wave_amplitude + 20
+            dpg.draw_text(
+                [label_x, label_y], label,
+                color=color, size=14, parent=self.drawlist_tag
+            )
+
+            # Draw "Click to change" hint
+            dpg.draw_text(
+                [label_x, label_y + 20], "Click to change",
+                color=(100, 100, 100), size=10, parent=self.drawlist_tag
+            )
+
+            # Store clickable region (the segment area)
+            self.clickable_regions[f'trail_{key}'] = {
+                'bounds': (start_x, start_y - wave_amplitude - 10,
+                          end_x, start_y + wave_amplitude + 10),
+                'category': 'delta_speed',
                 'key': key,
                 'color': color
             }
