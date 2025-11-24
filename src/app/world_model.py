@@ -212,15 +212,31 @@ class WorldModel:
 
         # Load canonical racing line with reference speeds (for delta speed calculation)
         canonical_path = os.path.join(self.data_dir, 'canonical_racing_line.csv')
-        if os.path.exists(canonical_path):
+        speed_path = os.path.join(self.data_dir, 'speed_profile.csv')
+
+        if os.path.exists(canonical_path) and os.path.exists(speed_path):
             try:
-                self.canonical_racing_line = pd.read_csv(canonical_path)
-                print(f"Loaded canonical racing line with reference speeds ({len(self.canonical_racing_line)} points)")
+                # Load both files
+                canonical = pd.read_csv(canonical_path)
+                speed_prof = pd.read_csv(speed_path)
+
+                # Merge on dist_m to get geometry + speeds
+                self.canonical_racing_line = canonical.merge(speed_prof, on='dist_m', how='left')
+
+                # Verify we have the required columns
+                if 'ref_speed_ms' in self.canonical_racing_line.columns:
+                    print(f"Loaded canonical racing line with reference speeds ({len(self.canonical_racing_line)} points)")
+                else:
+                    print("Warning: ref_speed_ms column not found after merge")
+                    self.canonical_racing_line = None
             except Exception as e:
                 print(f"Failed to load canonical racing line: {e}")
                 self.canonical_racing_line = None
         else:
-            print(f"canonical_racing_line.csv not found at {canonical_path}")
+            if not os.path.exists(canonical_path):
+                print(f"canonical_racing_line.csv not found at {canonical_path}")
+            if not os.path.exists(speed_path):
+                print(f"speed_profile.csv not found at {speed_path}")
             self.canonical_racing_line = None
 
         # Load per-car racing lines if available
