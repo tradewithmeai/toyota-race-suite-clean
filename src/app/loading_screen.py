@@ -111,11 +111,20 @@ class LoadingScreen:
                         dpg.add_spacer(height=8)
                         has_options = True
 
-                    # Demo data button
+                    # Demo data button (pre-processed)
                     demo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'processed')
                     if os.path.exists(os.path.join(demo_path, 'metadata.json')):
-                        dpg.add_button(label="Load Demo Data (Barber R2)",
+                        dpg.add_button(label="Load Processed Data",
                                       callback=self._load_demo_data,
+                                      width=420)
+                        dpg.add_spacer(height=8)
+                        has_options = True
+
+                    # Sample CSV button (needs processing)
+                    sample_csv = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'raw', 'R2_barber_telemetry_data.csv')
+                    if os.path.exists(sample_csv):
+                        dpg.add_button(label="Process Sample CSV",
+                                      callback=self._load_sample_csv,
                                       width=420)
                         dpg.add_spacer(height=8)
                         has_options = True
@@ -143,18 +152,18 @@ class LoadingScreen:
 
                     # Show message if no options available
                     if not has_options:
-                        dpg.add_text("No processed data available.",
+                        dpg.add_text("No data available.",
                                     color=(150, 150, 150))
                         dpg.add_spacer(height=5)
-                        dpg.add_text("Drop a CSV file or use Browse to get started.",
+                        dpg.add_text("Place CSV in data/raw/ or processed data in data/processed/",
                                     color=(100, 100, 100))
 
             dpg.add_spacer(height=30)
 
             # Footer
             with dpg.group(horizontal=True):
-                dpg.add_spacer(width=50)
-                dpg.add_text("Accepts: .csv files or processed data folders",
+                dpg.add_spacer(width=80)
+                dpg.add_text("Toyota Race Suite v1.0",
                             color=(100, 100, 100))
 
     def _create_processing_content(self):
@@ -374,6 +383,17 @@ class LoadingScreen:
             self.state.set_processed_dir(demo_path)
         else:
             self.state.set_error(f"Demo data not found:\n{demo_path}")
+
+    def _load_sample_csv(self):
+        """Load and process the sample CSV file."""
+        sample_csv = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'raw', 'R2_barber_telemetry_data.csv')
+        sample_csv = os.path.abspath(sample_csv)
+
+        if os.path.exists(sample_csv):
+            self._save_last_used_path(sample_csv)
+            self.state.set_input_file(sample_csv)
+        else:
+            self.state.set_error(f"Sample CSV not found:\n{sample_csv}")
 
     def _load_recent(self, path: str):
         """Load a file from the recent files list."""

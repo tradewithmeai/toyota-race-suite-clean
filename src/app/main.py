@@ -17,7 +17,8 @@ from app.world_model import WorldModel
 from app.gpu_renderer import GPURenderer
 from app.controls import PlaybackControls
 from app.telemetry_panel import TelemetryPanel
-from app.win32_drop import Win32DropHandler
+# Drag-and-drop disabled for stability
+# from app.win32_drop import Win32DropHandler
 from app.intro_animation import IntroAnimation
 from app.transitions import TransitionManager, AnimatedProgress
 
@@ -98,9 +99,10 @@ class RaceReplayApp:
         else:
             dpg.set_primary_window("loading_window", True)
 
-        # Enable Windows drag-and-drop after viewport is shown
-        self.drop_handler = Win32DropHandler(self._on_files_dropped)
-        self.drop_handler.enable("Race Replay - Toyota GR86")
+        # Drag-and-drop disabled for stability
+        # self.drop_handler = Win32DropHandler(self._on_files_dropped)
+        # self.drop_handler.enable("Race Replay - Toyota GR86")
+        self.drop_handler = None
 
         # Create fade overlay for transitions
         self.transitions.create_fade_overlay()
