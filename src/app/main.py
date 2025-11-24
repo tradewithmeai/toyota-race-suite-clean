@@ -21,6 +21,7 @@ from app.telemetry_panel import TelemetryPanel
 # from app.win32_drop import Win32DropHandler
 from app.intro_animation import IntroAnimation
 from app.transitions import TransitionManager, AnimatedProgress
+from app.message_overlay import init_message_overlay, render_overlay
 
 # Trail generation for delta speed visualization
 try:
@@ -319,6 +320,9 @@ class RaceReplayApp:
         # from actual canvas_window size
         self.renderer = GPURenderer("canvas", self.world)
 
+        # Initialize message overlay system
+        init_message_overlay("canvas")
+
         # Connect renderer to telemetry panel and controls
         self.telemetry.renderer = self.renderer
         self.renderer.controls = self.controls
@@ -398,6 +402,9 @@ class RaceReplayApp:
                 self.controls.update_simulation()
                 self.renderer.render_frame()
                 self.telemetry.update_telemetry()
+
+                # Render message overlay on top of everything
+                render_overlay()
 
                 # Update FPS counter
                 self.frame_count += 1
