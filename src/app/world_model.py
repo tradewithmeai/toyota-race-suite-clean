@@ -45,6 +45,7 @@ class WorldModel:
         self.current_theme = 'dark'  # 'dark' or 'light'
         self.racing_line = None  # Track centerline
         self.global_racing_line_tree = None  # cKDTree for global racing line
+        self.canonical_racing_line = None  # Full canonical line with ref speeds
         self.per_car_racing_lines = {}  # car_id -> np.ndarray(30000, 2) = [x, y]
         self.lap_lengths = {}  # car_id -> float (lap length in meters)
         self.racing_line_trees = {}  # car_id -> cKDTree for spatial queries (PHASE 3)
@@ -208,6 +209,19 @@ class WorldModel:
         # Build KD-tree for global racing line
         self.global_racing_line_tree = cKDTree(self.racing_line)
         print(f"Built KD-tree for global racing line ({len(self.racing_line)} points)")
+
+        # Load canonical racing line with reference speeds (for delta speed calculation)
+        canonical_path = os.path.join(self.data_dir, 'canonical_racing_line.csv')
+        if os.path.exists(canonical_path):
+            try:
+                self.canonical_racing_line = pd.read_csv(canonical_path)
+                print(f"Loaded canonical racing line with reference speeds ({len(self.canonical_racing_line)} points)")
+            except Exception as e:
+                print(f"Failed to load canonical racing line: {e}")
+                self.canonical_racing_line = None
+        else:
+            print(f"canonical_racing_line.csv not found at {canonical_path}")
+            self.canonical_racing_line = None
 
         # Load per-car racing lines if available
         racing_lines_dir = os.path.join(self.data_dir, 'racing_lines')
@@ -502,29 +516,54 @@ class WorldModel:
         # Extract trail segment from trajectory
         trail_points = []
 
-        # Get racing line tree for delta calculation
-        if self.global_racing_line_tree is None and self.racing_line is not None:
-            # Build tree if not exists
-            self.global_racing_line_tree = cKDTree(self.racing_line)
+        # Check if we have canonical racing line with reference speeds
+        if self.canonical_racing_line is not None and 'ref_speed_ms' in self.canonical_racing_line.columns:
+            # Use reference speeds from canonical racing line
+            if self.global_racing_line_tree is None and self.racing_line is not None:
+                # Build tree if not exists
+                self.global_racing_line_tree = cKDTree(self.racing_line)
 
-        if self.global_racing_line_tree is None:
-            return []
+            if self.global_racing_line_tree is None:
+                return []
 
-        # Sample every 20 frames (200ms) to reduce computation
-        sample_rate = 20
-        for idx in range(start_idx, current_idx, sample_rate):
-            x = float(traj[idx, 0])
-            y = float(traj[idx, 1])
-            speed_ms = float(traj[idx, 2]) * 0.44704  # Convert mph to m/s
+            # Get reference speeds array
+            ref_speeds = self.canonical_racing_line['ref_speed_ms'].values
 
-            # Use simple baseline speed instead of KDTree query for performance
-            # Average racing speed for reference
-            ref_speed_ms = 40.0  # ~90 mph baseline
+            # Sample every 20 frames (200ms) to reduce computation
+            sample_rate = 20
+            for idx in range(start_idx, current_idx, sample_rate):
+                x = float(traj[idx, 0])
+                y = float(traj[idx, 1])
+                speed_ms = float(traj[idx, 2]) * 0.44704  # Convert mph to m/s
 
-            # Compute delta in km/h
-            delta_kmh = (speed_ms - ref_speed_ms) * 3.6
+                # Find nearest racing line point and get its reference speed
+                _, nearest_idx = self.global_racing_line_tree.query([x, y])
 
-            trail_points.append((x, y, delta_kmh))
+                # Clamp to valid range
+                if nearest_idx >= len(ref_speeds):
+                    nearest_idx = len(ref_speeds) - 1
+
+                ref_speed_ms = ref_speeds[nearest_idx]
+
+                # Compute delta in km/h
+                delta_kmh = (speed_ms - ref_speed_ms) * 3.6
+
+                trail_points.append((x, y, delta_kmh))
+        else:
+            # Fallback to simple baseline if no canonical racing line available
+            sample_rate = 20
+            for idx in range(start_idx, current_idx, sample_rate):
+                x = float(traj[idx, 0])
+                y = float(traj[idx, 1])
+                speed_ms = float(traj[idx, 2]) * 0.44704  # Convert mph to m/s
+
+                # Use simple baseline speed
+                ref_speed_ms = 40.0  # ~90 mph baseline
+
+                # Compute delta in km/h
+                delta_kmh = (speed_ms - ref_speed_ms) * 3.6
+
+                trail_points.append((x, y, delta_kmh))
 
         return trail_points
 
