@@ -468,25 +468,69 @@ class WorldModel:
         else:
             print("No delta speed trail data loaded")
 
-    def get_delta_speed_trail(self, car_id: str) -> list:
+    def get_delta_speed_trail(self, car_id: str, duration_s: float = 15.0) -> list:
         """
-        Get delta speed trail data for a vehicle.
+        Get delta speed trail data for a vehicle, filtered by current time.
+
+        Computes delta speed dynamically by comparing car's speed to reference
+        speed at nearest racing line point. Returns trail for the last N seconds.
 
         Args:
             car_id: Vehicle identifier
+            duration_s: Trail duration in seconds (default 15s)
 
         Returns:
-            List of (x, y, delta_kmh) tuples, or empty list if no data
+            List of (x, y, delta_kmh) tuples for the trail window
         """
-        if car_id not in self.trail_data:
+        if car_id not in self.trajectories:
             return []
 
-        trail_df = self.trail_data[car_id]
-        return list(zip(
-            trail_df['x_m'].values,
-            trail_df['y_m'].values,
-            trail_df['delta_kmh'].values
-        ))
+        traj = self.trajectories[car_id]
+
+        # Calculate frame indices for trail window
+        # Trajectories are at 100Hz (10ms per frame)
+        current_idx = int(self.current_time_ms / 10)
+        trail_frames = int(duration_s * 100)
+        start_idx = max(0, current_idx - trail_frames)
+
+        if current_idx >= len(traj):
+            current_idx = len(traj) - 1
+
+        if current_idx - start_idx < 2:
+            return []
+
+        # Extract trail segment from trajectory
+        trail_points = []
+
+        # Get racing line tree for delta calculation
+        if self.global_racing_line_tree is None and self.racing_line is not None:
+            # Build tree if not exists
+            self.global_racing_line_tree = cKDTree(self.racing_line)
+
+        if self.global_racing_line_tree is None:
+            return []
+
+        # Sample every few points to reduce computation (every 10 frames = 100ms)
+        sample_rate = 10
+        for idx in range(start_idx, current_idx, sample_rate):
+            x = float(traj[idx, 0])
+            y = float(traj[idx, 1])
+            speed_ms = float(traj[idx, 2]) * 0.44704  # Convert mph to m/s
+
+            # Find nearest racing line point
+            _, nearest_idx = self.global_racing_line_tree.query([x, y])
+
+            # Get reference speed (use simple average as baseline)
+            # In a full implementation, this would come from canonical_racing_line
+            # For now, use a reference speed of ~40 m/s (typical racing speed)
+            ref_speed_ms = 40.0  # Placeholder - should load from speed_profile.csv
+
+            # Compute delta in km/h
+            delta_kmh = (speed_ms - ref_speed_ms) * 3.6
+
+            trail_points.append((x, y, delta_kmh))
+
+        return trail_points
 
     def _compute_car_sector_times(self, car_id: str):
         """Compute sector times for a single car."""

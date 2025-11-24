@@ -31,6 +31,7 @@ class ColorCustomizationMenu:
         self.categories = {
             'car_colors': 'Car Colours',
             'brake_gradient': 'Brake Visualisation',
+            'acceleration_heatmap': 'Accel Fill',
             'deviation_bars': 'Deviation Bars',
             'race_timer': 'Race Timer',
             'track': 'Track Elements',
@@ -271,6 +272,7 @@ class ColorCustomizationMenu:
                 ('deviation_bar_length', 'Deviation Bar Length', 10, 50),
             ],
             'acceleration_heatmap': [
+                ('accel_display_size', 'Accel Fill Size', 5, 40),
                 ('trail_duration_s', 'Custom Trail Duration (s)', 1, 15),
             ],
         }

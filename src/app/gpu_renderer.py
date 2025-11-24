@@ -524,6 +524,39 @@ class GPURenderer:
         dpg.draw_polygon(points, color=fill_color, fill=fill_color,
                         parent=self.canvas, tag=tag)
 
+    def _draw_accel_fill(self, px, py, intensity, radius, car_id):
+        """Draw filled circle that expands based on acceleration intensity."""
+        # Validate inputs
+        if intensity is None or intensity <= 0.05:
+            return
+        if not (math.isfinite(px) and math.isfinite(py)):
+            return
+        if radius <= 0:
+            return
+
+        # Get max expansion size from config
+        max_size = color_config.get_size('accel_display_size')
+
+        # Fill radius expands with intensity
+        fill_radius = radius * (0.3 + (max_size / 15.0) * intensity)
+
+        # Get color based on acceleration intensity
+        color = self.get_accel_color(intensity)
+        alpha = int(150 + 100 * intensity)
+        fill_color = (color[0], color[1], color[2], alpha)
+
+        # Tag for cleanup
+        tag = f"accel_fill_{car_id}"
+
+        # Clean up old tag before drawing
+        if dpg.does_item_exist(tag):
+            dpg.delete_item(tag)
+
+        # Draw filled circle
+        dpg.draw_circle(center=(px, py), radius=fill_radius,
+                       color=fill_color, fill=fill_color,
+                       parent=self.canvas, tag=tag)
+
     def get_deviation_color(self, deviation: float) -> tuple:
         """Get highlight color based on deviation from racing line."""
         # Clamp to ±2m
@@ -615,27 +648,30 @@ class GPURenderer:
 
                 # Check if Circle Glow is enabled (outer expanding brake arcs)
                 show_glow = self.world.show_circle_glow or self.world.show_circle_glow_all
-                # Check if Circle Centre is enabled (inner brake fills)
+                # Check if Circle Centre is enabled (inner accel fill)
                 show_centre = self.world.show_circle_centre or self.world.show_circle_centre_all
 
                 brake_front = state.get('brake_front', 0) or 0
                 brake_rear = state.get('brake_rear', 0) or 0
+                accel_norm = state.get('accel_norm', 0) or 0
                 heading = state.get('heading', 0) or 0
                 # Ensure values are valid numbers
                 if not isinstance(brake_front, (int, float)):
                     brake_front = 0
                 if not isinstance(brake_rear, (int, float)):
                     brake_rear = 0
+                if not isinstance(accel_norm, (int, float)):
+                    accel_norm = 0
                 if not isinstance(heading, (int, float)):
                     heading = 0
                 is_braking_glow = show_glow and (brake_front > 0.05 or brake_rear > 0.05)
-                is_braking_centre = show_centre and (brake_front > 0.05 or brake_rear > 0.05)
+                is_accel_active = show_centre and (accel_norm > 0.05)
 
                 # Check if Lateral Diff is enabled (deviation bars + colored overlay)
                 show_lateral_diff = self.world.show_lateral_diff or self.world.show_lateral_diff_all
 
-                # Only show deviation overlay if NOT showing brake centre (brake centre takes priority)
-                if show_lateral_diff and not is_braking_centre:
+                # Only show deviation overlay if NOT showing accel fill (accel fill takes priority)
+                if show_lateral_diff and not is_accel_active:
                     # Draw overlay circle with deviation-based color
                     overlay_color = self.get_deviation_color(deviation)
                     dpg.draw_circle(center=(px, py), radius=overlay_radius,
@@ -643,21 +679,18 @@ class GPURenderer:
                                    parent=self.canvas,
                                    tag=overlay_tag)
                 else:
-                    # No lateral diff or brake centre active - delete overlay if exists
+                    # No lateral diff or accel fill active - delete overlay if exists
                     if dpg.does_item_exist(overlay_tag):
                         dpg.delete_item(overlay_tag)
 
-                # Draw inner filled semi-circles (Circle Centre effect)
-                if is_braking_centre:
-                    self._draw_brake_fill(px, py, heading, brake_front, overlay_radius,
-                                         is_front=True, car_id=car_id)
-                    self._draw_brake_fill(px, py, heading, brake_rear, overlay_radius,
-                                         is_front=False, car_id=car_id)
+                # Draw inner filled circle (Accel Fill effect)
+                if is_accel_active:
+                    self._draw_accel_fill(px, py, accel_norm, overlay_radius, car_id)
                 else:
-                    # Clean up brake fills when not active
-                    for fill_tag in [f"brake_fill_front_{car_id}", f"brake_fill_rear_{car_id}"]:
-                        if dpg.does_item_exist(fill_tag):
-                            dpg.delete_item(fill_tag)
+                    # Clean up accel fill when not active
+                    accel_fill_tag = f"accel_fill_{car_id}"
+                    if dpg.does_item_exist(accel_fill_tag):
+                        dpg.delete_item(accel_fill_tag)
 
                 # Draw outer expanding brake arcs (Circle Glow effect)
                 if is_braking_glow:
@@ -929,23 +962,20 @@ class GPURenderer:
                                  parent=self.canvas, tag=seg_tag)
                 continue
 
-            # Handle Delta Speed mode (from pre-computed trail CSVs)
-            # This shows the last 15s of each car's fastest lap with delta speed coloring
+            # Handle Delta Speed mode (dynamic trail following car)
+            # This shows the last N seconds of the car's path with delta speed coloring
             if trail_mode == 'Delta Speed':
                 # Only draw for selected cars
                 is_selected = car_id in selected
                 if highlight and is_any_selected and not is_selected:
                     continue
 
-                # Get delta speed trail data
-                trail_points = self.world.get_delta_speed_trail(car_id)
+                # Get custom trail duration from settings
+                trail_duration = color_config.get_size('trail_duration_s')
+
+                # Get delta speed trail data (dynamic, follows car)
+                trail_points = self.world.get_delta_speed_trail(car_id, trail_duration)
                 if len(trail_points) < 2:
-                    # Debug: print once if no trail data
-                    if not hasattr(self, '_delta_speed_warning_shown'):
-                        self._delta_speed_warning_shown = True
-                        print(f"Delta Speed trails not available - trail_data has {len(self.world.trail_data)} entries")
-                        if len(self.world.trail_data) == 0:
-                            print("  Hint: Re-run preprocessing pipeline by dropping a CSV to generate trails")
                     continue
 
                 # Draw individual segments with delta speed-based colors
@@ -1546,9 +1576,24 @@ class GPURenderer:
         self.car_items = {}
 
     def invalidate_track(self):
-        """Force track redraw on next frame (needed after zoom/pan)."""
-        if dpg.does_item_exist("track_line"):
-            dpg.delete_item("track_line")
+        """Force track redraw on next frame (needed after zoom/pan or color change)."""
+        # Delete all track elements so they redraw with current colors
+        track_elements = [
+            "track_line",
+            "track_outline",
+            "global_racing_line",
+            "density_map_image"
+        ]
+        for tag in track_elements:
+            if dpg.does_item_exist(tag):
+                dpg.delete_item(tag)
+
+        # Delete sector lines
+        for i in range(10):
+            for tag in [f"sector_line_{i}", f"sector_label_{i}"]:
+                if dpg.does_item_exist(tag):
+                    dpg.delete_item(tag)
+
         self.track_drawn = False
         # Also clear background to redraw
         if dpg.does_item_exist("background_rect"):
@@ -1845,36 +1890,16 @@ class GPURenderer:
         if abs(dx) < 0.1 and abs(dy) < 0.1:
             return
 
-        # Convert screen delta to world delta
-        # Must match the scale calculation in world_to_screen() for 1:1 pixel movement
-        bounds = self.world.bounds
-        x_range = bounds['x_max'] - bounds['x_min']
-        y_range = bounds['y_max'] - bounds['y_min']
+        # Convert screen delta to normalized space delta
+        # Pan offsets are now in normalized [0,1] space to match world_to_screen
+        # Screen pixels to normalized: divide by viewport dimensions
+        norm_dx = dx / self.viewport_width
+        norm_dy = dy / self.viewport_height
 
-        # Account for 15% padding on each side (1.3x total range)
-        padded_x_range = x_range * 1.3
-        padded_y_range = y_range * 1.3
-
-        # Calculate actual render scale (same logic as world_to_screen)
-        data_aspect = padded_x_range / padded_y_range if padded_y_range != 0 else 1.0
-        canvas_aspect = self.viewport_width / self.viewport_height
-
-        if data_aspect > canvas_aspect:
-            # Fit to width
-            h_scale = self.viewport_width
-            v_scale = self.viewport_width / data_aspect
-        else:
-            # Fit to height
-            h_scale = self.viewport_height * data_aspect
-            v_scale = self.viewport_height
-
-        # Convert using correct scales (1:1 pixel movement)
-        world_dx = (dx / h_scale) * padded_x_range / self.zoom_level
-        world_dy = -(dy / v_scale) * padded_y_range / self.zoom_level  # Flip Y
-
-        # Update pan offset
-        self.pan_offset_x -= world_dx
-        self.pan_offset_y -= world_dy
+        # Apply to pan offset (note: Y is inverted in screen coords)
+        # Divide by zoom_level so pan speed is consistent at all zoom levels
+        self.pan_offset_x += norm_dx / self.zoom_level
+        self.pan_offset_y -= norm_dy / self.zoom_level  # Flip Y
 
         # Redraw track
         self.invalidate_track()

@@ -32,8 +32,8 @@ class TelemetryPanel:
         dpg.add_checkbox(label="Brake Arcs", tag="circle_glow_cb",
                         default_value=False, callback=self.toggle_circle_glow)
 
-        # Brake Fill (inner filled semi-circles showing front/rear brake pressure)
-        dpg.add_checkbox(label="Brake Fill", tag="circle_centre_cb",
+        # Accel Fill (inner filled circle showing acceleration intensity)
+        dpg.add_checkbox(label="Accel Fill", tag="circle_centre_cb",
                         default_value=False, callback=self.toggle_circle_centre)
 
         # Trail with mode dropdown
