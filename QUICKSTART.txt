@@ -1,0 +1,13 @@
+TOYOTA RACE SUITE - QUICK START
+================================
+
+OPTION 1: Run from source (Recommended - 2 minutes)
+1. Install Python 3.10+ and run: pip install -r requirements.txt
+2. Run: python -m src.app.main
+3. Click "Load Processed Data" when the window appears
+
+OPTION 2: Use pre-built executable (Windows only)
+1. Download and extract the dist.zip file
+2. Run ToyotaRaceSuite.exe (data folder must be in same directory)
+
+Once loaded, click the PLAY button (bottom left) to start the race replay.
