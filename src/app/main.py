@@ -53,7 +53,8 @@ class RaceReplayApp:
         self.intro_animation = None
         self.loading_screen = None
         self.preprocessing_runner = None
-        self.show_intro = True  # Show intro on startup
+        # Skip intro in hackathon mode
+        self.show_intro = os.environ.get('HACKATHON_DEMO') != '1'
 
         # Replay components (created when data is ready)
         self.world = None
@@ -90,6 +91,13 @@ class RaceReplayApp:
 
         # Set up state change callback
         self.state_manager.set_state_change_callback(self._on_state_change)
+
+        # HACKATHON MODE: Auto-load processed data
+        if os.environ.get('HACKATHON_DEMO') == '1':
+            processed_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'data', 'processed')
+            if os.path.exists(processed_dir):
+                print(f"🏁 Hackathon mode: Auto-loading data from {processed_dir}")
+                self.state_manager.set_processed_dir(processed_dir)
 
         # Create intro animation
         self.intro_animation = IntroAnimation(self._on_intro_complete)
@@ -372,30 +380,13 @@ class RaceReplayApp:
         # Switch primary window
         dpg.set_primary_window("main_window", True)
 
-        # Check if demo should run (first launch or hackathon mode)
-        hackathon_mode = os.environ.get('HACKATHON_DEMO') == '1'
-
-        if hackathon_mode or should_show_demo():
-            if hackathon_mode:
-                print("\n🏁 HACKATHON DEMO MODE - 2.5 minute automated showcase")
-                print("📹 Recording? Demo starts in 2 seconds...")
-                import time
-                time.sleep(2)
-            else:
-                print("\nStarting training demo (first launch)...")
-
-            self.demo_manager = DemoStateManager(
-                self.world, self.renderer, self.controls, self.telemetry,
-                use_hackathon_script=hackathon_mode
-            )
-            self.demo_manager.start_demo()
-        else:
-            print("\nApplication started. Press Play to begin simulation.")
-            print("Controls:")
-            print("  - Play/Pause: Control playback")
-            print("  - Speed slider: Adjust playback speed (0.1x to 4x)")
-            print("  - Time scrubber: Jump to specific time")
-            print("  - Driving Style: Apply different driving modes")
+        # Demo disabled for screenshot session
+        print("\nApplication started. Press Play to begin simulation.")
+        print("Controls:")
+        print("  - Play/Pause: Control playback")
+        print("  - Speed slider: Adjust playback speed (0.1x to 4x)")
+        print("  - Time scrubber: Jump to specific time")
+        print("  - Driving Style: Apply different driving modes")
 
     def _on_escape_key(self):
         """Handle ESC key press - skip demo if active."""
@@ -447,16 +438,16 @@ class RaceReplayApp:
                 # Render message overlay on top of everything
                 render_overlay()
 
+                # Update FPS counter
+                self.frame_count += 1
+                current_time = time.time()
+
                 # Update demo if active
                 if self.demo_manager and self.demo_manager.is_running:
                     dt = current_time - self.last_fps_time if self.last_fps_time else 0.016
                     self.demo_manager.update(dt)
                     # Render demo cursor on top
                     self.demo_manager.render("canvas")
-
-                # Update FPS counter
-                self.frame_count += 1
-                current_time = time.time()
                 if current_time - self.last_fps_time >= 1.0:
                     fps = self.frame_count / (current_time - self.last_fps_time)
                     dpg.set_viewport_title(f"Race Replay - Toyota GR86 | {fps:.0f} FPS | Time: {self.world.current_time_ms/1000:.1f}s")

@@ -38,7 +38,8 @@ if sys.platform == 'win32':
 # Format: (source, destination_in_bundle)
 datas = [
     ('assets', 'assets'),
-    ('data/sample', 'data/sample'),
+    ('data/raw', 'data/raw'),
+    ('data/processed', 'data/processed'),
 ]
 
 # Binaries (empty for now, PyInstaller auto-detects most)

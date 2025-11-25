@@ -139,7 +139,8 @@ class TelemetryPanel:
         # Auto-enable brake in HUD when visualization is enabled
         if value:
             self.world.hud_show_brake = True
-            dpg.set_value("hud_brake_cb", True)
+            if dpg.does_item_exist("hud_brake_cb"):
+                dpg.set_value("hud_brake_cb", True)
 
     def toggle_circle_centre(self, sender, value):
         """Toggle circle centre (placeholder)."""

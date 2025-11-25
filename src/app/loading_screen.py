@@ -82,7 +82,8 @@ class LoadingScreen:
                     has_options = False
 
                     # Demo data button (pre-processed)
-                    demo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'processed')
+                    # Use current working directory (set by main.py for PyInstaller)
+                    demo_path = os.path.join(os.getcwd(), 'data', 'processed')
                     if os.path.exists(os.path.join(demo_path, 'metadata.json')):
                         dpg.add_button(label="Load Processed Data",
                                       callback=self._load_demo_data,
@@ -91,7 +92,7 @@ class LoadingScreen:
                         has_options = True
 
                     # Sample CSV button (needs processing)
-                    sample_csv = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'raw', 'R2_barber_telemetry_data.csv')
+                    sample_csv = os.path.join(os.getcwd(), 'data', 'raw', 'R2_barber_telemetry_data.csv')
                     if os.path.exists(sample_csv):
                         dpg.add_button(label="Process Sample CSV",
                                       callback=self._load_sample_csv,
