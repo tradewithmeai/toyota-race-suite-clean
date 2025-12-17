@@ -7,6 +7,7 @@ import numpy as np
 from app.density_map import build_density_map, density_map_to_texture
 from app.deviation_bars import DeviationBarState, compute_bar_fills, draw_deviation_bars, delete_deviation_bars
 from app.color_config import color_config
+from rendering.lap_delta_renderer import LapDeltaRenderer
 
 
 class GPURenderer:
@@ -58,6 +59,9 @@ class GPURenderer:
         # Box selection state
         self.box_select_start = None  # (x, y) start position for box selection
         self.box_select_active = False
+
+        # Lap delta renderer
+        self.lap_delta_renderer = LapDeltaRenderer()
 
     def world_to_screen(self, x: float, y: float) -> tuple:
         """
@@ -1152,6 +1156,17 @@ class GPURenderer:
 
         # Draw trails
         self.draw_trails()
+
+        # Draw lap delta trails (before cars so they appear behind)
+        if self.world.show_lap_delta:
+            camera_params = {
+                'zoom_level': self.zoom_level,
+                'pan_offset_x': self.pan_offset_x,
+                'pan_offset_y': self.pan_offset_y,
+                'viewport_width': self.viewport_width,
+                'viewport_height': self.viewport_height
+            }
+            self.lap_delta_renderer.render(self.world, camera_params, self.canvas)
 
         # Update cars
         states = self.world.get_all_car_states(self.world.current_time_ms)

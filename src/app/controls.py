@@ -7,11 +7,13 @@ import dearpygui.dearpygui as dpg
 class PlaybackControls:
     """Manages playback state and UI controls."""
 
-    def __init__(self, world_model):
+    def __init__(self, world_model, screenshot_callback=None, video_exporter=None):
         self.world = world_model
         self.is_playing = False
         self.speed_factor = 1.0
         self.last_frame_time = time.time()
+        self.screenshot_callback = screenshot_callback
+        self.video_exporter = video_exporter
 
     def setup_ui(self):
         """Create control widgets."""
@@ -21,6 +23,22 @@ class PlaybackControls:
             dpg.add_button(label="Restart", callback=self.restart, width=80)
 
         dpg.add_spacer(height=10)
+
+        # Screenshot button
+        if self.screenshot_callback is not None:
+            dpg.add_button(label="Screenshot (F12)", callback=self._take_screenshot, width=250)
+            dpg.add_spacer(height=10)
+
+        # Video recording button
+        if self.video_exporter is not None:
+            dpg.add_button(
+                label="Start Recording",
+                tag="video_record_button",
+                callback=self._toggle_recording,
+                width=250
+            )
+            dpg.add_text("", tag="recording_status_text", color=(150, 150, 150))
+            dpg.add_spacer(height=10)
 
         dpg.add_slider_float(label="Speed", tag="speed_slider",
                             default_value=1.0, min_value=0.1, max_value=4.0,
@@ -72,3 +90,49 @@ class PlaybackControls:
     def scrub_time(self, sender, time_s):
         """Scrub to specific time."""
         self.world.current_time_ms = time_s * 1000
+
+    def _take_screenshot(self, sender=None, app_data=None):
+        """Handle screenshot button click."""
+        if self.screenshot_callback:
+            self.screenshot_callback()
+
+    def _toggle_recording(self, sender=None, app_data=None):
+        """Toggle video recording on/off."""
+        if not self.video_exporter:
+            return
+
+        if not self.video_exporter.is_recording:
+            # Start recording
+            success = self.video_exporter.start_recording()
+            if success:
+                dpg.set_item_label("video_record_button", "Stop Recording")
+                dpg.set_value("recording_status_text", "Recording...")
+                dpg.configure_item("recording_status_text", color=(255, 100, 100))
+        else:
+            # Stop recording
+            output_path = self.video_exporter.stop_recording()
+            dpg.set_item_label("video_record_button", "Start Recording")
+            if output_path:
+                import os
+                filename = os.path.basename(output_path)
+                dpg.set_value("recording_status_text", f"Saved: {filename}")
+                dpg.configure_item("recording_status_text", color=(100, 255, 100))
+            else:
+                dpg.set_value("recording_status_text", "Recording failed")
+                dpg.configure_item("recording_status_text", color=(255, 100, 100))
+
+    def update_recording_status(self):
+        """Update recording status display."""
+        if not self.video_exporter or not self.video_exporter.is_recording:
+            return
+
+        status = self.video_exporter.get_recording_status()
+        frame_count = status['frame_count']
+        duration = status['duration']
+
+        dpg.set_value("recording_status_text", f"Recording: {frame_count} frames ({duration:.1f}s)")
+
+    def capture_video_frame(self):
+        """Capture frame if recording."""
+        if self.video_exporter and self.video_exporter.is_recording:
+            self.video_exporter.capture_frame()

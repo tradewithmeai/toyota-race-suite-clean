@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dir:*)",
+      "Bash(\"D:\\Documents\\11Projects\\toyota-test\\toyota-race-suite-clean\\venv\\Scripts\\pip.exe\" list --format=freeze)",
+      "Bash(nul)",
+      "Bash(chmod:*)",
+      "Bash(venvScriptspip.exe install pyinstaller)",
+      "Bash(\"D:\\Documents\\11Projects\\toyota-test\\toyota-race-suite-clean\\venv\\Scripts\\pip.exe\" install pyinstaller)",
+      "Bash(\"D:\\Documents\\11Projects\\toyota-test\\toyota-race-suite-clean\\build_windows.bat\")",
+      "Bash(findstr:*)",
+      "Bash(ToyotaRaceSuite.exe)",
+      "Bash(test:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nAdd cross-platform packaging support\n\n- Fix pywin32 imports for Mac/Linux compatibility\n- Add PyInstaller configuration for bundled executables\n- Add working directory detection for double-click launch\n- Add build scripts for Windows and Mac\n- Add comprehensive documentation for judges and Mac builds\nEOF\n)\")",
+      "Bash(git commit:*)",
+      "Bash(venvScriptspyinstaller.exe --clean --noconfirm ToyotaRaceSuite.spec)",
+      "Bash(xcopy:*)",
+      "Bash(robocopy:*)",
+      "Bash(venv\\Scripts\\python.exe:*)",
+      "Bash(\"D:\\Documents\\11Projects\\toyota-test\\toyota-race-suite-clean\\venv\\Scripts\\python.exe\" -m src.app.main)",
+      "Bash(set:*)",
+      "Bash(git push:*)",
+      "Bash(tar:*)",
+      "Bash(zip:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

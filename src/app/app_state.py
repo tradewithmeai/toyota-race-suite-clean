@@ -10,6 +10,7 @@ class AppState(Enum):
     PROCESSING = "processing"
     READY = "ready"
     ERROR = "error"
+    DEMO = "demo"
 
 
 class StateManager:

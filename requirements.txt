@@ -12,8 +12,14 @@ scipy>=1.10.0
 # Visualization
 matplotlib>=3.7.0
 
-# Windows-specific (drag & drop support)
+# Windows-specific (drag & drop, screenshots)
 pywin32>=306; sys_platform == 'win32'
+
+# Screenshot support (fallback if pywin32 not available)
+pyautogui>=0.9.54
+
+# Video recording
+opencv-python>=4.8.0
 
 # Utilities
 pillow>=9.5.0

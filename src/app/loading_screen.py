@@ -81,32 +81,36 @@ class LoadingScreen:
                     # Track if any options are available
                     has_options = False
 
-                    # Demo data button (pre-processed)
+                    # Browse for processed data button
+                    dpg.add_button(label="Browse for Processed Data",
+                                  callback=self._open_processed_dialog,
+                                  width=420, height=50)
+                    dpg.add_spacer(height=15)
+                    has_options = True
+
+                    # Browse for raw CSV button
+                    dpg.add_button(label="Browse for Raw CSV",
+                                  callback=self._open_file_dialog,
+                                  width=420, height=50)
+                    dpg.add_spacer(height=15)
+                    has_options = True
+
+                    # Demo data button (pre-processed) - optional shortcut
                     # Use current working directory (set by main.py for PyInstaller)
                     demo_path = os.path.join(os.getcwd(), 'data', 'processed')
                     if os.path.exists(os.path.join(demo_path, 'metadata.json')):
-                        dpg.add_button(label="Load Processed Data",
+                        dpg.add_button(label="Load Demo Data (Quick Start)",
                                       callback=self._load_demo_data,
-                                      width=420, height=50)
-                        dpg.add_spacer(height=15)
-                        has_options = True
+                                      width=420, height=40)
+                        dpg.add_spacer(height=10)
 
-                    # Sample CSV button (needs processing)
+                    # Sample CSV button (needs processing) - optional shortcut
                     sample_csv = os.path.join(os.getcwd(), 'data', 'raw', 'R2_barber_telemetry_data.csv')
                     if os.path.exists(sample_csv):
-                        dpg.add_button(label="Process Sample CSV",
+                        dpg.add_button(label="Process Sample CSV (Quick Start)",
                                       callback=self._load_sample_csv,
-                                      width=420, height=50)
-                        dpg.add_spacer(height=15)
-                        has_options = True
-
-                    # Show message if no options available
-                    if not has_options:
-                        dpg.add_text("No data available.",
-                                    color=(150, 150, 150))
-                        dpg.add_spacer(height=5)
-                        dpg.add_text("Place CSV in data/raw/ or processed data in data/processed/",
-                                    color=(100, 100, 100))
+                                      width=420, height=40)
+                        dpg.add_spacer(height=10)
 
             dpg.add_spacer(height=30)
 
@@ -285,7 +289,7 @@ class LoadingScreen:
         sample_csv = os.path.abspath(sample_csv)
 
         if os.path.exists(sample_csv):
-            self.state.set_input_file(sample_csv)
+            self._validate_and_load_csv(sample_csv)
         else:
             self.state.set_error(f"Sample CSV not found:\n{sample_csv}")
 
@@ -294,7 +298,7 @@ class LoadingScreen:
         def file_selected(sender, app_data):
             if app_data and 'file_path_name' in app_data:
                 file_path = app_data['file_path_name']
-                self.state.set_input_file(file_path)
+                self._validate_and_load_csv(file_path)
 
         # Create file dialog
         with dpg.file_dialog(label="Select Telemetry CSV",
@@ -323,6 +327,26 @@ class LoadingScreen:
                             directory_selector=True):
             pass
 
+    def _validate_and_load_csv(self, file_path: str):
+        """Validate CSV format before loading."""
+        # Import validation function
+        try:
+            from processing.load_raw_data import validate_csv_format
+        except ImportError:
+            # Fallback if import fails - just load without validation
+            self.state.set_input_file(file_path)
+            return
+
+        # Validate CSV format
+        is_valid, message = validate_csv_format(file_path)
+
+        if is_valid:
+            print(f"✓ CSV validation passed: {message}")
+            self.state.set_input_file(file_path)
+        else:
+            print(f"✗ CSV validation failed: {message}")
+            self.state.set_error(f"Invalid CSV format:\n\n{message}")
+
     def _retry(self):
         """Reset state to try again."""
         self.state.reset()
@@ -350,6 +374,7 @@ class LoadingScreen:
             else:
                 self.state.set_error(f"Invalid folder:\n{file_path}\n\nMissing metadata.json")
         elif file_path.lower().endswith('.csv'):
-            self.state.set_input_file(file_path)
+            # Validate CSV before loading
+            self._validate_and_load_csv(file_path)
         else:
             self.state.set_error(f"Invalid file type: {file_path}\n\nPlease drop a .csv file or processed data folder.")

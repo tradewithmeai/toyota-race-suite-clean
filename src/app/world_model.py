@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.spatial import cKDTree  # PHASE 3: For spatial deviation queries
 from scipy.interpolate import interp1d
 from app.color_config import color_config
+from app.dataset_manager import DatasetManager
 
 
 class WorldModel:
@@ -38,8 +39,13 @@ class WorldModel:
         }
     }
 
-    def __init__(self, data_dir: str):
+    def __init__(self, data_dir: str, dataset_manager: DatasetManager = None):
         self.trajectories = {}  # car_id -> np.ndarray(N, 11) = [x, y, speed, lapdist, brake_front, brake_rear, gear, steering_deg, heading_rad, accel_norm, lap]
+
+        # Multi-dataset support
+        self.dataset_manager = dataset_manager
+        if self.dataset_manager is None:
+            self.dataset_manager = DatasetManager()
 
         # Theme setting
         self.current_theme = 'dark'  # 'dark' or 'light'
@@ -85,6 +91,10 @@ class WorldModel:
 
         # Delta speed trail data (loaded from outputs/trails/)
         self.trail_data = {}  # car_id -> DataFrame with delta speed trail
+
+        # Lap delta visualization
+        self.show_lap_delta = False  # Show previous lap delta trail
+        self.lap_delta_trail_seconds = 15.0  # Trail duration in seconds
 
         # Track display options
         self.show_density_plot = True  # Density map background
@@ -273,6 +283,58 @@ class WorldModel:
 
         # Load delta speed trail data
         self._load_trail_data()
+
+    def reload_from_active_dataset(self):
+        """Reload trajectories from the currently active dataset."""
+        active_data_dir = self.dataset_manager.get_active_data_dir()
+        if active_data_dir is None:
+            print("No active dataset to reload from")
+            return False
+
+        # Update data_dir and reload
+        self.data_dir = active_data_dir
+        self._clear_state()
+        self.load_trajectories()
+        return True
+
+    def switch_to_dataset(self, dataset_id: str):
+        """Switch to a different dataset.
+
+        Args:
+            dataset_id: ID of dataset to switch to
+
+        Returns:
+            True if successful, False otherwise
+        """
+        if not self.dataset_manager.set_active_dataset(dataset_id):
+            print(f"Failed to switch to dataset {dataset_id}")
+            return False
+
+        return self.reload_from_active_dataset()
+
+    def _clear_state(self):
+        """Clear all loaded data before reloading."""
+        self.trajectories.clear()
+        self.per_car_racing_lines.clear()
+        self.lap_lengths.clear()
+        self.racing_line_trees.clear()
+        self.deviation_offsets.clear()
+        self.trail_data.clear()
+        self.car_ids = []
+        self.colors = {}
+        self.current_time_ms = 0
+        self.total_duration_ms = 0
+        self.bounds = {}
+        self.racing_line = None
+        self.global_racing_line_tree = None
+        self.canonical_racing_line = None
+        self.track_boundary = None
+        self.sector_map = None
+        self.ideal_speed_profile = None
+
+        # Reset UI selections
+        self.selected_car_ids = []
+        self.hidden_car_ids = []
 
     def _compute_track_boundary(self):
         """Create smooth outer boundary around all trajectory points."""
@@ -1143,3 +1205,122 @@ class WorldModel:
     def select_no_cars(self):
         """Deselect all cars."""
         self.selected_car_ids = []
+
+    # === Lap Delta Calculation Methods ===
+
+    def get_current_lap_number(self, car_id: str, time_ms: float = None) -> int:
+        """Get the lap number for a car at a specific time.
+
+        Args:
+            car_id: Vehicle ID
+            time_ms: Time in milliseconds (uses current_time_ms if None)
+
+        Returns:
+            int: Lap number (1-indexed), or 0 if not available
+        """
+        if car_id not in self.trajectories:
+            return 0
+
+        if time_ms is None:
+            time_ms = self.current_time_ms
+
+        traj = self.trajectories[car_id]
+        current_idx = int(time_ms / 10)
+
+        if current_idx < 0 or current_idx >= len(traj):
+            return 0
+
+        # Lap is column 10
+        return int(traj[current_idx, 10])
+
+    def get_lap_delta_data(self, car_id: str) -> dict:
+        """Calculate lap delta for current position vs previous lap.
+
+        Returns dict with:
+        - has_delta: bool - True if delta can be calculated
+        - current_lap: int - Current lap number
+        - delta_seconds: float - Time delta (negative = faster)
+        - trail_points: list of (x, y, delta_seconds) - Historical trail points
+        """
+        result = {
+            'has_delta': False,
+            'current_lap': 0,
+            'delta_seconds': 0.0,
+            'trail_points': []
+        }
+
+        if car_id not in self.trajectories:
+            return result
+
+        traj = self.trajectories[car_id]
+        current_idx = int(self.current_time_ms / 10)
+
+        if current_idx < 0 or current_idx >= len(traj):
+            return result
+
+        current_lap = int(traj[current_idx, 10])
+        result['current_lap'] = current_lap
+
+        # Need at least lap 2 to have a previous lap
+        if current_lap < 2:
+            return result
+
+        # Get current lapdist
+        current_lapdist = traj[current_idx, 3]  # Column 3 is lapdist
+
+        # Find corresponding point on previous lap (lap N-1)
+        previous_lap = current_lap - 1
+        prev_lap_mask = traj[:, 10] == previous_lap
+        prev_lap_indices = np.where(prev_lap_mask)[0]
+
+        if len(prev_lap_indices) == 0:
+            return result
+
+        # Get lapdist values for previous lap
+        prev_lapdists = traj[prev_lap_indices, 3]
+
+        # Find closest lapdist match on previous lap
+        lapdist_diffs = np.abs(prev_lapdists - current_lapdist)
+        closest_idx = prev_lap_indices[np.argmin(lapdist_diffs)]
+
+        # Calculate time delta
+        # Time is index * 10ms
+        current_time_in_lap = (current_idx - np.where(traj[:, 10] == current_lap)[0][0]) * 10
+        prev_time_in_lap = (closest_idx - prev_lap_indices[0]) * 10
+
+        delta_ms = current_time_in_lap - prev_time_in_lap
+        result['delta_seconds'] = delta_ms / 1000.0
+        result['has_delta'] = True
+
+        # Generate trail points (last N seconds)
+        trail_samples = int(self.lap_delta_trail_seconds * 100)  # 10ms samples
+        start_idx = max(0, current_idx - trail_samples)
+
+        trail_points = []
+        for idx in range(start_idx, current_idx + 1):
+            if idx < 0 or idx >= len(traj):
+                continue
+
+            lap_at_idx = int(traj[idx, 10])
+            if lap_at_idx != current_lap:
+                continue  # Only show trail for current lap
+
+            lapdist_at_idx = traj[idx, 3]
+
+            # Find corresponding point on previous lap
+            prev_lapdist_diffs = np.abs(prev_lapdists - lapdist_at_idx)
+            prev_closest_idx = prev_lap_indices[np.argmin(prev_lapdist_diffs)]
+
+            # Calculate delta for this point
+            time_in_lap_at_idx = (idx - np.where(traj[:, 10] == current_lap)[0][0]) * 10
+            prev_time_at_lapdist = (prev_closest_idx - prev_lap_indices[0]) * 10
+
+            delta_at_idx = time_in_lap_at_idx - prev_time_at_lapdist
+
+            # Store position and delta
+            x, y = traj[idx, 0], traj[idx, 1]
+            trail_points.append((x, y, delta_at_idx / 1000.0))
+
+        result['trail_points'] = trail_points
+
+        return result

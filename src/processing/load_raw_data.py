@@ -4,6 +4,69 @@ import numpy as np
 import pandas as pd
 
 
+def validate_csv_format(csv_path: str) -> tuple:
+    """Validate CSV format before expensive processing.
+
+    Args:
+        csv_path: Path to CSV file
+
+    Returns:
+        tuple: (is_valid: bool, message: str)
+    """
+    try:
+        # Read just the header and first 100 rows for validation
+        df_sample = pd.read_csv(csv_path, nrows=100, low_memory=False)
+
+        # Check required columns
+        required_columns = [
+            'original_vehicle_id',
+            'telemetry_name',
+            'telemetry_value',
+            'timestamp'
+        ]
+
+        missing_columns = [col for col in required_columns if col not in df_sample.columns]
+        if missing_columns:
+            return False, f"Missing required columns: {', '.join(missing_columns)}\n\nExpected columns: {', '.join(required_columns)}"
+
+        # Check telemetry_value is numeric
+        if not pd.api.types.is_numeric_dtype(df_sample['telemetry_value']):
+            return False, "Column 'telemetry_value' must contain numeric data.\n\nFound non-numeric values in telemetry_value column."
+
+        # Check timestamp is numeric
+        if not pd.api.types.is_numeric_dtype(df_sample['timestamp']):
+            return False, "Column 'timestamp' must contain numeric data.\n\nFound non-numeric values in timestamp column."
+
+        # Check row count (count actual file lines)
+        with open(csv_path, 'r') as f:
+            row_count = sum(1 for _ in f) - 1  # Subtract header
+
+        if row_count < 1000:
+            return False, f"CSV file too small ({row_count:,} rows).\n\nRace telemetry files typically contain 10,000+ rows.\nThis file may not be a valid telemetry export."
+
+        # Check for expected telemetry signals in sample
+        telemetry_names = df_sample['telemetry_name'].unique()
+        expected_signals = ['VBOX_Lat_Min', 'VBOX_Long_Minutes', 'speed', 'Laptrigger_lapdist_dls']
+        found_signals = [sig for sig in expected_signals if sig in telemetry_names]
+
+        if len(found_signals) == 0:
+            # No expected signals found - might be wrong format
+            available_signals = list(telemetry_names[:10])  # Show first 10
+            return False, f"No expected telemetry signals found.\n\nExpected: {', '.join(expected_signals)}\nFound: {', '.join(available_signals)}...\n\nThis may not be a valid TRD telemetry export."
+
+        # All checks passed
+        return True, f"Valid CSV ({row_count:,} rows, {len(telemetry_names)} signals)"
+
+    except FileNotFoundError:
+        return False, f"File not found: {csv_path}"
+    except PermissionError:
+        return False, f"Permission denied: {csv_path}\n\nThe file may be open in another program."
+    except pd.errors.EmptyDataError:
+        return False, "CSV file is empty"
+    except Exception as e:
+        return False, f"Error reading CSV file: {str(e)}"
+
+
 def load_telemetry(csv_path: str) -> pd.DataFrame:
     """Load raw telemetry CSV file with memory optimization."""
     print(f"Loading telemetry from {csv_path}...")

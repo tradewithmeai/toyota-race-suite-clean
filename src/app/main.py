@@ -22,12 +22,15 @@ from app.app_state import StateManager, AppState
 from app.loading_screen import LoadingScreen
 from app.preprocessing_runner import PreprocessingRunner, get_default_output_dir
 from app.world_model import WorldModel
+from app.dataset_manager import DatasetManager
+from app.dataset_panel import DatasetPanel
 from app.gpu_renderer import GPURenderer
 from app.controls import PlaybackControls
 from app.telemetry_panel import TelemetryPanel
-# Drag-and-drop disabled for stability
-# from app.win32_drop import Win32DropHandler
+from app.win32_drop import Win32DropHandler
 from app.intro_animation import IntroAnimation
+from rendering.screenshot_exporter import ScreenshotExporter
+from rendering.video_exporter import VideoExporter
 from app.transitions import TransitionManager, AnimatedProgress
 from app.message_overlay import init_message_overlay, render_overlay
 from app.training_demo import DemoStateManager, should_show_demo
@@ -55,6 +58,10 @@ class RaceReplayApp:
         self.preprocessing_runner = None
         # Skip intro in hackathon mode
         self.show_intro = os.environ.get('HACKATHON_DEMO') != '1'
+
+        # Multi-dataset support
+        self.dataset_manager = DatasetManager()
+        self.dataset_panel = None
 
         # Replay components (created when data is ready)
         self.world = None
@@ -120,10 +127,9 @@ class RaceReplayApp:
         else:
             dpg.set_primary_window("loading_window", True)
 
-        # Drag-and-drop disabled for stability
-        # self.drop_handler = Win32DropHandler(self._on_files_dropped)
-        # self.drop_handler.enable("Race Replay - Toyota GR86")
-        self.drop_handler = None
+        # Enable drag-and-drop file loading
+        self.drop_handler = Win32DropHandler(self._on_files_dropped)
+        self.drop_handler.enable("Race Replay - Toyota GR86")
 
         # Create fade overlay for transitions
         self.transitions.create_fade_overlay()
@@ -284,8 +290,12 @@ class RaceReplayApp:
         # Generate delta speed trails if needed
         self._generate_trails_if_needed(data_dir)
 
-        # Load world model
-        self.world = WorldModel(data_dir)
+        # Add dataset to manager
+        dataset_id, dataset_info = self.dataset_manager.add_dataset(data_dir)
+        print(f"Added dataset {dataset_id}: {dataset_info.display_name}")
+
+        # Load world model with dataset manager
+        self.world = WorldModel(data_dir, dataset_manager=self.dataset_manager)
         self.world.load_theme_preference()  # Load saved theme
         self.world.load_trajectories()
 
@@ -320,13 +330,38 @@ class RaceReplayApp:
                     self.telemetry = TelemetryPanel(self.world)
                     self.telemetry.setup_ui()
 
+                    # Dataset selection panel
+                    dpg.add_spacer(height=20)
+                    dpg.add_separator()
+                    dpg.add_spacer(height=10)
+                    self.dataset_panel = DatasetPanel(
+                        self.dataset_manager,
+                        on_dataset_change_callback=self._on_dataset_changed
+                    )
+                    self.dataset_panel.setup_ui()
+
                     # Separator before playback controls
                     dpg.add_spacer(height=20)
                     dpg.add_separator()
                     dpg.add_spacer(height=10)
 
+                    # Initialize screenshot exporter
+                    self.screenshot_exporter = ScreenshotExporter(output_dir="screenshots")
+
+                    # Initialize video exporter
+                    self.video_exporter = VideoExporter(
+                        self.screenshot_exporter,
+                        output_dir="recordings",
+                        fps=60,
+                        resolution=(1920, 1080)
+                    )
+
                     # Playback controls at bottom of left panel
-                    self.controls = PlaybackControls(self.world)
+                    self.controls = PlaybackControls(
+                        self.world,
+                        screenshot_callback=self._take_screenshot,
+                        video_exporter=self.video_exporter
+                    )
                     self.controls.setup_ui()
 
                 dpg.add_spacer(width=5)
@@ -377,21 +412,90 @@ class RaceReplayApp:
                 callback=self._on_escape_key
             )
 
+            # F12 key handler for screenshot
+            dpg.add_key_press_handler(
+                key=dpg.mvKey_F12,
+                callback=self._on_f12_key
+            )
+
         # Switch primary window
         dpg.set_primary_window("main_window", True)
 
-        # Demo disabled for screenshot session
-        print("\nApplication started. Press Play to begin simulation.")
+        # Update dataset panel with initial dataset
+        if self.dataset_panel:
+            self.dataset_panel.update_dataset_list()
+
+        # Start training demo on first launch
+        if should_show_demo():
+            print("First launch detected - starting training demo")
+            self.demo_manager = DemoStateManager(
+                self.world,
+                self.renderer,
+                self.controls,
+                self.telemetry_panel
+            )
+            self.demo_manager.start_demo()
+        else:
+            print("\nApplication started. Press Play to begin simulation.")
         print("Controls:")
         print("  - Play/Pause: Control playback")
         print("  - Speed slider: Adjust playback speed (0.1x to 4x)")
         print("  - Time scrubber: Jump to specific time")
         print("  - Driving Style: Apply different driving modes")
+        print("  - F12: Take screenshot (saved to screenshots/ folder)")
+        print("  - Start/Stop Recording: Record video (saved to recordings/ folder)")
 
     def _on_escape_key(self):
         """Handle ESC key press - skip demo if active."""
         if self.demo_manager and self.demo_manager.is_running:
             self.demo_manager.request_skip()
+
+    def _on_f12_key(self):
+        """Handle F12 key press - take screenshot."""
+        self._take_screenshot()
+
+    def _take_screenshot(self):
+        """Capture and save screenshot of current viewport."""
+        if not hasattr(self, 'screenshot_exporter'):
+            print("Screenshot exporter not initialized")
+            return
+
+        try:
+            filepath = self.screenshot_exporter.take_screenshot(show_message=True)
+            if filepath:
+                print(f"Screenshot saved: {filepath}")
+            else:
+                print("Screenshot capture failed - see error messages above")
+        except Exception as e:
+            print(f"Error taking screenshot: {e}")
+            import traceback
+            traceback.print_exc()
+
+    def _on_dataset_changed(self, dataset_id: str):
+        """Callback when user switches to a different dataset."""
+        print(f"Switching to dataset: {dataset_id}")
+
+        # Switch world model to new dataset
+        if self.world and self.world.switch_to_dataset(dataset_id):
+            # Update telemetry panel
+            if self.telemetry:
+                self.telemetry.update_car_list()
+                self.telemetry.refresh_display()
+
+            # Reset playback
+            if self.controls:
+                self.controls.restart()
+
+            # Update scrubber range
+            if dpg.does_item_exist("time_scrubber"):
+                dpg.configure_item(
+                    "time_scrubber",
+                    max_value=int(self.world.total_duration_ms // 1000)
+                )
+
+            print(f"Switched to dataset with {len(self.world.car_ids)} cars")
+        else:
+            print(f"Failed to switch to dataset {dataset_id}")
 
     def run(self):
         """Main render loop."""
@@ -434,6 +538,12 @@ class RaceReplayApp:
                 self.controls.update_simulation()
                 self.renderer.render_frame()
                 self.telemetry.update_telemetry()
+
+                # Capture video frame if recording
+                self.controls.capture_video_frame()
+
+                # Update recording status display
+                self.controls.update_recording_status()
 
                 # Render message overlay on top of everything
                 render_overlay()

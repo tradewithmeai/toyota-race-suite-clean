@@ -69,9 +69,19 @@ class TelemetryPanel:
         dpg.add_checkbox(label="Global Racing Line", tag="global_racing_line_cb",
                         default_value=False, callback=self.toggle_global_racing_line)
 
-        # Sector Lines removed - code commented out
-        # dpg.add_checkbox(label="Sector Lines", tag="sector_lines_cb",
-        #                 default_value=False, callback=self.toggle_sector_lines)
+        dpg.add_checkbox(label="Sector Lines", tag="sector_lines_cb",
+                        default_value=False, callback=self.toggle_sector_lines)
+
+        dpg.add_checkbox(label="Lap Delta Trail", tag="lap_delta_cb",
+                        default_value=False, callback=self.toggle_lap_delta)
+
+        dpg.add_spacer(height=15)
+
+        # === LAP DELTA INFO (collapsible) ===
+        with dpg.collapsing_header(label="LAP DELTA", default_open=False, tag="lap_delta_header"):
+            dpg.add_text("Current Lap: -", tag="lap_delta_lap_text")
+            dpg.add_text("Delta: --:--", tag="lap_delta_time_text")
+            dpg.add_text("(vs previous lap)", tag="lap_delta_hint_text", color=(150, 150, 150))
 
         dpg.add_spacer(height=15)
 
@@ -80,6 +90,22 @@ class TelemetryPanel:
             dpg.add_text(f"Cars: {len(self.world.car_ids)}", tag="cars_count_text")
             dpg.add_text(f"Duration: {self.world.total_duration_ms/1000:.0f}s", tag="duration_text")
             dpg.add_text("Selected: 0", tag="selected_count_text")
+
+        dpg.add_spacer(height=15)
+
+        # === SECTOR TIMING (collapsible) ===
+        with dpg.collapsing_header(label="SECTOR TIMING", default_open=False, tag="sector_timing_header"):
+            # Check if sector data is available
+            if self.world.sector_map is not None:
+                dpg.add_text("Ideal Lap: 0.00s", tag="ideal_lap_time_text")
+                dpg.add_text("Current Sector: -", tag="current_sector_text")
+                dpg.add_text("Sector 1: --:--", tag="sector_1_text")
+                dpg.add_text("Sector 2: --:--", tag="sector_2_text")
+                dpg.add_text("Sector 3: --:--", tag="sector_3_text")
+                dpg.add_text("Lap Time: --:--", tag="lap_time_text")
+            else:
+                dpg.add_text("Sector data not available", tag="sector_unavailable_text", color=(150, 150, 150))
+                dpg.add_text("(requires section_compare processing)", tag="sector_hint_text", color=(100, 100, 100))
 
         dpg.add_spacer(height=15)
 
@@ -110,6 +136,12 @@ class TelemetryPanel:
 
         # Update selected count
         dpg.set_value("selected_count_text", f"Selected: {len(self.world.selected_car_ids)}")
+
+        # Update sector timing display
+        self.update_sector_timing()
+
+        # Update lap delta display
+        self.update_lap_delta()
 
     # === Visual Effects Callbacks ===
 
@@ -207,6 +239,10 @@ class TelemetryPanel:
         if self.renderer is not None:
             self.renderer.invalidate_track()
 
+    def toggle_lap_delta(self, sender, value):
+        """Toggle lap delta trail visualization."""
+        self.world.show_lap_delta = value
+
     def reset_view(self):
         """Reset zoom and pan to default view."""
         if self.renderer is not None:
@@ -268,4 +304,125 @@ class TelemetryPanel:
         if self.renderer is not None:
             self.renderer.invalidate_track()
         print(f"Theme changed to: {new_theme}")
+
+    # === Sector Timing Updates ===
+
+    def update_sector_timing(self):
+        """Update sector timing display based on selected car and current time."""
+        # Only update if sector data is available
+        if self.world.sector_map is None:
+            return
+
+        # Only update if we have a selected car
+        if not self.world.selected_car_ids:
+            return
+
+        car_id = list(self.world.selected_car_ids)[0]  # Use first selected car
+
+        try:
+            # Update ideal lap time
+            if dpg.does_item_exist("ideal_lap_time_text"):
+                ideal_time = self.world.ideal_lap_time_s
+                dpg.set_value("ideal_lap_time_text", f"Ideal Lap: {ideal_time:.2f}s")
+
+            # Get current sector
+            current_sector = self.world.get_current_sector(car_id)
+            if dpg.does_item_exist("current_sector_text"):
+                dpg.set_value("current_sector_text", f"Current Sector: {current_sector}")
+
+            # Get sector times for the current lap
+            if car_id in self.world.car_sector_times:
+                laps = sorted(self.world.car_sector_times[car_id].keys())
+                if laps:
+                    # Get the latest lap with sector data
+                    latest_lap = laps[-1]
+                    sector_times = self.world.car_sector_times[car_id][latest_lap]
+
+                    # Get best sectors for comparison
+                    best_sectors = self.world.car_best_sectors.get(car_id, [float('inf')] * 3)
+                    overall_best = self.world.overall_best_sectors
+
+                    # Update each sector
+                    for i in range(min(3, len(sector_times))):
+                        sector_time = sector_times[i]
+                        if sector_time is not None:
+                            # Calculate delta to personal best
+                            delta_pb = sector_time - best_sectors[i] if best_sectors[i] < float('inf') else 0
+                            delta_ob = sector_time - overall_best[i] if overall_best[i] < float('inf') else 0
+
+                            # Color code based on delta
+                            if delta_pb < -0.05:  # Significantly faster than PB
+                                color = (0, 255, 0)  # Green
+                            elif delta_pb > 0.05:  # Slower than PB
+                                color = (255, 100, 100)  # Red
+                            else:
+                                color = (200, 200, 200)  # Gray
+
+                            # Format text
+                            text = f"Sector {i+1}: {sector_time:.2f}s"
+                            if abs(delta_pb) > 0.001:
+                                text += f" ({delta_pb:+.2f})"
+
+                            tag = f"sector_{i+1}_text"
+                            if dpg.does_item_exist(tag):
+                                dpg.set_value(tag, text)
+                                dpg.configure_item(tag, color=color)
+
+                    # Calculate lap time
+                    if all(t is not None for t in sector_times[:3]):
+                        lap_time = sum(sector_times[:3])
+                        if dpg.does_item_exist("lap_time_text"):
+                            dpg.set_value("lap_time_text", f"Lap Time: {lap_time:.2f}s")
+
+        except Exception as e:
+            # Silently handle errors to avoid spamming console
+            pass
+
+    def update_lap_delta(self):
+        """Update lap delta display based on selected car."""
+        # Only update if we have a selected car
+        if not self.world.selected_car_ids:
+            # Clear display
+            if dpg.does_item_exist("lap_delta_lap_text"):
+                dpg.set_value("lap_delta_lap_text", "Current Lap: -")
+            if dpg.does_item_exist("lap_delta_time_text"):
+                dpg.set_value("lap_delta_time_text", "Delta: --:--")
+            return
+
+        car_id = list(self.world.selected_car_ids)[0]  # Use first selected car
+
+        try:
+            # Get lap delta data
+            delta_data = self.world.get_lap_delta_data(car_id)
+
+            # Update lap number
+            if dpg.does_item_exist("lap_delta_lap_text"):
+                current_lap = delta_data['current_lap']
+                dpg.set_value("lap_delta_lap_text", f"Current Lap: {current_lap}")
+
+            # Update delta time
+            if dpg.does_item_exist("lap_delta_time_text"):
+                if delta_data['has_delta']:
+                    delta_s = delta_data['delta_seconds']
+
+                    # Color code based on delta
+                    if delta_s < -0.05:  # Faster
+                        color = (0, 255, 0)  # Green
+                    elif delta_s > 0.05:  # Slower
+                        color = (255, 100, 100)  # Red
+                    else:
+                        color = (200, 200, 200)  # Gray
+
+                    # Format delta with +/- sign
+                    sign = "+" if delta_s >= 0 else ""
+                    dpg.set_value("lap_delta_time_text", f"Delta: {sign}{delta_s:.3f}s")
+                    dpg.configure_item("lap_delta_time_text", color=color)
+                else:
+                    # No delta available (lap 1 or no previous lap)
+                    dpg.set_value("lap_delta_time_text", "Delta: N/A (Lap 1)")
+                    dpg.configure_item("lap_delta_time_text", color=(150, 150, 150))
+
+        except Exception as e:
+            # Silently handle errors
+            pass
 
